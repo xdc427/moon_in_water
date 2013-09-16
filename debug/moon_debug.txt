@@ -1,0 +1,10 @@
+enum{
+	//group one
+	ERROR ,
+	WARNNING,
+	DEBUG,
+	NORMAL,
+	//group two
+	TEST 
+	//group end
+};
