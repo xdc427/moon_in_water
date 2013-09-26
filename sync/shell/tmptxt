@@ -1,0 +1,12 @@
+head
+struct:list_s:0
+int:id:0
+struct list_s *:next:0
+tail
+head
+struct:list:0
+long int** * *:id:2
+int:num:0
+unsigned int:a:0
+struct stu **	*:student:1
+tail

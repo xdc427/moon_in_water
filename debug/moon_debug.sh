@@ -1,7 +1,7 @@
 sed -e 's/^[ 	]*//g' -e 's/,//g' $1 | awk '
 BEGIN{
 	skip=1;
-	print "#ifndef MOON_DEBUG"
+	print "#ifndef _MOON_DEBUG_H_"
 	print "#define _MOON_DEBUG_H_"
 	print ""
 	print "#define MODENAME \"\""
