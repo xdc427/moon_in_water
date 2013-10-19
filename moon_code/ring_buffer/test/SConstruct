@@ -1,0 +1,11 @@
+Import( 'env' )
+
+cur_env=env.Clone()
+def mv_shell( source, target, env, for_signature ):
+	return 'cp %s %s' % ( source[0], target[0] )
+
+cur_env.Program( 'ring_test1.c' )
+cur_env.Program( 'ring_test2.c' )
+bld = Builder( generator = mv_shell )
+cur_env.Append( BUILDERS = { 'Mv_shell' : bld } )
+cur_env.Mv_shell( 'test.sh', '../test/test.sh' )

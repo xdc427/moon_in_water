@@ -1,0 +1,4 @@
+Import( '*' )
+
+obj = env.Object( 'test1.c' )
+Return( 'obj' ) 

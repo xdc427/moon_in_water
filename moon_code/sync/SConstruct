@@ -1,0 +1,6 @@
+Import( 'env' )
+
+obj = SConscript( 'src/SConstruct', variant_dir = 'build', duplicate = 0 )
+if env['MOON_TARGET'] == 'test':
+	SConscript( 'test/SConstruct', variant_dir = 'test_bin', duplicate = 0 )
+Return( 'obj' )

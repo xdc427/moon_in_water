@@ -1,0 +1,12 @@
+Import( 'env' )
+
+cur_env = env.Clone()
+def make_head( source, target, env, for_signature):
+	return 'cp %s %s' % ( source[0], target[0] )
+
+bld = Builder( generator = make_head )
+cur_env.Append( BUILDERS = { 'Foo' : bld } )
+cur_env.Foo( '#./moon_code/include_%s/ring_buffer.h' % ( env['MOON_TARGET'] ), 'ring_buffer.h' )
+obj = cur_env.Object( 'ring_buffer_%s' % ( env['MOON_TARGET'] ), 'ring_buffer.c' )
+Return( 'obj' )
+

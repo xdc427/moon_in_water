@@ -1,0 +1,27 @@
+Import( 'env' )
+
+objs = []
+cur_env = env.Clone()
+
+def make_head( source, target, env, for_signature ):
+	return 'cp %s %s; cp %s %s' % ( source[0], target[0], source[1], target[1] )
+
+def make_runtime( source, target, env, for_signature ):
+	return 'cat %s %s > %s' % ( source[0], source[1], target[0] )
+
+bld = Builder( generator = make_head )
+bld2 = Builder( generator = make_runtime )
+cur_env.Append( BUILDERS = { 'Make_head' : bld } )
+cur_env.Append( BUILDERS = { 'Make_runtime' : bld2 } )
+
+obj_struct= SConscript( 'shell/SConstruct' )
+objs.append( obj_struct )
+
+cur_env.Make_head( [ '#./moon_code/include_%s/moonpp.h' % ( env['MOON_TARGET'] ), '#./moon_code/include_%s/moon_runtime.h' % ( env['MOON_TARGET'] ) ], [ 'moonpp.h', 'moon_runtime.h' ] )
+cur_env.Make_runtime( 'moon_runtime_%s.c' % ( env['MOON_TARGET'] ), [ '../src/moon_runtime.c', 'shell/version_init.c' ] )
+
+cur_env.Append( CPPPATH=['shell'] )
+obj = cur_env.Object( 'moon_runtime_%s.c' % ( env['MOON_TARGET'] ) )
+objs.append( obj )
+Return( 'objs' )
+

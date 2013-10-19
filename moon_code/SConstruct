@@ -1,0 +1,11 @@
+Import( 'env' )
+
+env.Append( LIBPATH = [ '#./moon_code' ] )
+env.Append( LIBS = [ 'moon_%s' % ( env['MOON_TARGET'] ) ] )
+objs = []
+dirs = [ 'debug', 'ring_buffer', 'sync' ]
+for subdir in dirs:
+	o = SConscript( '%s/SConstruct' % ( subdir ) )
+	objs.append( o )
+lib = env.Library( 'moon_%s' % ( env['MOON_TARGET'] ), objs )
+Return( 'lib' )

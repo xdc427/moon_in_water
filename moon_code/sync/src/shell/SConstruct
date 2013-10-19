@@ -1,0 +1,23 @@
+import os
+Import( 'env' )
+
+
+def make_struct( source, target, env, for_signature ):
+	return '%s %s' % ( source[0], ' '.join( env['ANALYSE_DIRS'] ) )
+
+bld = Builder( generator = make_struct )
+env.Append( BUILDERS = { 'Make_struct' : bld } )
+print env['ANALYSE_DIRS']
+
+if len( env['ANALYSE_DIRS'] ) > 0 :
+	c_file = env.Make_struct( 'shadow_struct_%s.c' % ( env['MOON_TARGET'] ), [ 'shadow_all.sh' ] )
+	Depends( c_file, [ 'append.c', 'moonpp.sh', 'moonpp_next.sh', 'shadow_struct.sh', 'shadow_var.sh', '_shadow_struct.h', 'shadow_var_func.sh' ] )
+	objs = []
+	for dir in env['ANALYSE_DIRS'] :
+		obj = env.Object( 'shadow_struct_%s_%s' % ( dir.split('/')[-1], env['MOON_TARGET'] ), 'shadow_struct_%s.c' % ( dir.split('/')[-1] ) )
+		objs.append( obj )
+	obj = env.Object( 'append_%s' % ( env['MOON_TARGET'] ), 'append.c' )
+	objs.append( obj )
+	Depends( objs, c_file)
+	Return( 'objs' )
+
