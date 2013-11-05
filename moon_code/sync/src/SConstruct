@@ -17,11 +17,12 @@ cur_env.Append( BUILDERS = { 'Make_runtime' : bld2 } )
 obj_struct= SConscript( 'shell/SConstruct' )
 objs.append( obj_struct )
 
-cur_env.Make_head( [ '#./moon_code/include_%s/moonpp.h' % ( env['MOON_TARGET'] ), '#./moon_code/include_%s/moon_runtime.h' % ( env['MOON_TARGET'] ) ], [ 'moonpp.h', 'moon_runtime.h' ] )
-cur_env.Make_runtime( 'moon_runtime_%s.c' % ( env['MOON_TARGET'] ), [ '../src/moon_runtime.c', 'shell/version_init.c' ] )
+heads = cur_env.Make_head( [ '#./moon_code/include_%s/moonpp.h' % ( env['MOON_TARGET'] ), '#./moon_code/include_%s/moon_runtime.h' % ( env['MOON_TARGET'] ) ], [ 'moonpp.h', 'moon_runtime.h' ] )
+cur_env.Make_runtime( 'moon_runtime_%s.c' % ( env['MOON_TARGET'] ), [ '../src/moon_runtime.c', 'shell/%s/version_init_%s.c' % ( env['MOON_TARGET'], env['MOON_TARGET'] ) ] )
 
 cur_env.Append( CPPPATH=['shell'] )
 obj = cur_env.Object( 'moon_runtime_%s.c' % ( env['MOON_TARGET'] ) )
 objs.append( obj )
+Depends( obj, heads )
 Return( 'objs' )
 

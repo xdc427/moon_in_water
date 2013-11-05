@@ -3,10 +3,10 @@ Import( 'env' )
 cur_env = env.Clone()
 def make_head( source, target, env, for_signature):
 	return '%s %s >%s' % ( source[0], source[1], target[0] )
-
 bld = Builder( generator = make_head )
 cur_env.Append( BUILDERS = { 'Foo' : bld } )
 cur_env.Foo( '#./moon_code/include_%s/moon_debug.h' % ( env['MOON_TARGET'] ), [ 'moon_debug.sh', 'moon_debug.txt' ] )
 obj = cur_env.Object( 'moon_debug_%s' % ( env['MOON_TARGET'] ), 'moon_debug.c' )
+
 Return( 'obj' )
 

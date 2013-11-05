@@ -6,8 +6,7 @@ def make_head( source, target, env, for_signature):
 
 bld = Builder( generator = make_head )
 cur_env.Append( BUILDERS = { 'Foo' : bld } )
-heads = cur_env.Foo( '#./moon_code/include_%s/ring_buffer.h' % ( env['MOON_TARGET'] ), 'ring_buffer.h' )
-obj = cur_env.Object( 'ring_buffer_%s' % ( env['MOON_TARGET'] ), 'ring_buffer.c' )
-Depends( obj, heads )
+cur_env.Foo( '#./moon_code/include_%s/moon_packet.h' % ( env['MOON_TARGET'] ), [ 'moon_packet.h' ] )
+obj = cur_env.Object( 'moon_packet_%s' % ( env['MOON_TARGET'] ), 'moon_packet.c' )
 Return( 'obj' )
 

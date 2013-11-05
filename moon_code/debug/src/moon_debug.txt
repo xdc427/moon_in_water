@@ -9,3 +9,7 @@ enum{
 	TEST 
 	//group end
 };
+
+#define XID_RAEDABLE "man_readable"
+#define MOON_PRINT_MAN( LEVEL, message, ... ) \
+MOON_PRINT( LEVEL, XID_RAEDABLE, "[%s:%d]:" message, __func__, __LINE__, ##__VA_ARGS__ )

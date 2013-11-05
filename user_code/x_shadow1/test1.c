@@ -29,7 +29,7 @@ void main()
 	SHADOW_POINT struct list_shadow1_s * tmp;
 	add( 2 );
 	add( 3 );
-
+	add( 4 );
 	for( tmp = SHADOW_GET( &head ); SHADOW_POINT_CMP( &tmp, !=, NULL ) 
 			; tmp = SHADOW_GET( &tmp->next ) ){
 		printf( "%d->", SHADOW_GET( &tmp->id ) );

@@ -1,23 +1,37 @@
 import os
-Import( 'env' )
+import copy
 
+Import( 'env' )
+cur_env = env.Clone()
 
 def make_struct( source, target, env, for_signature ):
-	return '%s %s' % ( source[0], ' '.join( env['ANALYSE_DIRS'] ) )
+	opts = copy.deepcopy( env[ 'ANALYSE_DIRS' ] )	
+	opts.insert( 0, env[ 'MOON_TARGET' ] )
+	return '%s %s; cp %s/%s/*.[ch] %s' % ( source[0], ' '.join( opts ), os.path.dirname( '%s' % ( source[0] ) ), env['MOON_TARGET'], os.path.dirname( '%s' % ( target[0] ) ) )
 
 bld = Builder( generator = make_struct )
-env.Append( BUILDERS = { 'Make_struct' : bld } )
-print env['ANALYSE_DIRS']
+cur_env.Append( BUILDERS = { 'Make_struct' : bld } )
+cur_env.Append( CPPPATH = [ '.' ] )
+#print cur_env['ANALYSE_DIRS']
 
-if len( env['ANALYSE_DIRS'] ) > 0 :
-	c_file = env.Make_struct( 'shadow_struct_%s.c' % ( env['MOON_TARGET'] ), [ 'shadow_all.sh' ] )
-	Depends( c_file, [ 'append.c', 'moonpp.sh', 'moonpp_next.sh', 'shadow_struct.sh', 'shadow_var.sh', '_shadow_struct.h', 'shadow_var_func.sh' ] )
+if len( cur_env['ANALYSE_DIRS'] ) > 0 :
+	target_files = []
+	for dir in cur_env['ANALYSE_DIRS'] :
+		target_files.append( 'shadow_struct_%s.c' % ( dir.split('/')[-1] ) )
+		target_files.append( 'structs_%s.h' % ( dir.split('/')[-1] ) )
+	target_files.append( 'shadow_struct_%s.h' % ( cur_env['MOON_TARGET'] ) )
+	target_files.append( 'version_init_%s.c' % ( cur_env['MOON_TARGET'] ) )
+	c_file = cur_env.Make_struct( target_files, [ 'shadow_all.sh' ] )
+#	print target_files
+#	AlwaysBuild( c_file )
+#	print cur_env[ 'DEPEND_USER_CODE' ]
+	Depends( c_file, cur_env[ 'DEPEND_USER_CODE' ] )
+	Depends( c_file, [ 'moonpp.sh', 'moonpp_next.sh', 'shadow_struct.sh', 'shadow_var.sh', 'shadow_var_func.sh' ] )
 	objs = []
-	for dir in env['ANALYSE_DIRS'] :
-		obj = env.Object( 'shadow_struct_%s_%s' % ( dir.split('/')[-1], env['MOON_TARGET'] ), 'shadow_struct_%s.c' % ( dir.split('/')[-1] ) )
+	for dir in cur_env['ANALYSE_DIRS'] :
+		obj = cur_env.Object( 'shadow_struct_%s_%s' % ( dir.split('/')[-1], cur_env['MOON_TARGET'] ), 'shadow_struct_%s.c' % ( dir.split('/')[-1] ) )
 		objs.append( obj )
-	obj = env.Object( 'append_%s' % ( env['MOON_TARGET'] ), 'append.c' )
+	obj = cur_env.Object( 'append_%s' % ( cur_env['MOON_TARGET'] ), 'append.c' )
 	objs.append( obj )
-	Depends( objs, c_file)
 	Return( 'objs' )
 

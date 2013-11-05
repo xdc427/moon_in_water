@@ -43,7 +43,7 @@ static pthread_mutex_t mutex_map = PTHREAD_MUTEX_INITIALIZER;
 /*
  * output: -1 fail, >= 0 ok
  */ 
-static int get_free_ring( ring_quote quoter, unsigned int len )
+static inline int get_free_ring( ring_quote quoter, unsigned int len )
 {
 	int i = 0;
 	
@@ -55,7 +55,7 @@ static int get_free_ring( ring_quote quoter, unsigned int len )
 	return -1;
 }
 
-static ring ring_init( unsigned buffer_len, unsigned int flags )
+static inline ring ring_init( unsigned buffer_len, unsigned int flags )
 {
 	ring new_ring = NULL;
 
@@ -91,7 +91,7 @@ malloc_error:
 	return NULL;
 }
 
-static void ring_free( ring des_ring )
+static inline void ring_free( ring des_ring )
 {
 	if( des_ring == NULL ){
 		return;
@@ -204,7 +204,7 @@ void ring_leave( int fd, int is_destroy )
 	}
 }
 
-static void tv_addup( struct timeval * dst, struct timeval * src )
+static inline void tv_addup( struct timeval * dst, struct timeval * src )
 {
 	dst->tv_sec += src->tv_sec;
 	dst->tv_usec += src->tv_usec;
@@ -217,7 +217,7 @@ static void tv_addup( struct timeval * dst, struct timeval * src )
 /*
  *output: tv1 == tv2  0, tv1 > tv2  > 0, tv1 < tv2  < 0
  */
-static int tv_compare( struct timeval * tv1, struct timeval * tv2 )
+static inline int tv_compare( struct timeval * tv1, struct timeval * tv2 )
 {
 	if( tv1->tv_sec > tv2->tv_sec ){
 		return 1;
@@ -234,7 +234,7 @@ static int tv_compare( struct timeval * tv1, struct timeval * tv2 )
 	}
 }
 
-static ring ring_search( int fd )
+static inline ring ring_search( int fd )
 {
 	ring tmp = NULL;
 
@@ -314,7 +314,7 @@ int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
 			MOON_TEST(
 				*( out + already_read + really_read ) = 0;
 				MOON_PRINT( TEST, "ring_read", "%s", out + already_read );
-			)
+			);
 
 			already_read += really_read;
 			if( ( flags & RING_PEEK ) == 0 ){
@@ -441,7 +441,7 @@ int ring_write( int fd, char *in, unsigned int len, unsigned int flags, ...)
 				*( in + already_write + really_write ) = 0;
 				MOON_PRINT( TEST, "ring_write", "%s", in + already_write );
 				*( in +already_write + really_write ) = c;
-			)
+			);
 			already_write += really_write;
 			//printf( "already_write:%d\n", already_write );
 			cur_ring->end += really_write;

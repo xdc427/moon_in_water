@@ -14,7 +14,7 @@ BEGIN{
 		for(i=num-1;i>=0;i--){
 			print "#ifdef LEVEL_"save[i]; 
 			print "#define MOON_PRINT_"save[i]"( level, xid, body, ... ) moon_print( MODENAME, level, xid, body ,##__VA_ARGS__ )"; 
-			print "#define MOON_"save[i]"( code ) code"
+			print "#define MOON_"save[i]"( code )  code"
 			for(j=i-1;j>=0;j--){ 
 				print "#define LEVEL_"save[j]
 			}

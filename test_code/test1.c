@@ -24,15 +24,25 @@ void add( int id )
 	SHADOW_SET( tmp, new );
 }
 
-void main()
+void print_list()
 {
 	SHADOW_POINT struct list_s * tmp;
 	add( 2 );
 	add( 3 );
-
 	for( tmp = SHADOW_GET( &head ); SHADOW_POINT_CMP( &tmp, !=, NULL ) 
 			; tmp = SHADOW_GET( &tmp->next ) ){
 		printf( "%d->", SHADOW_GET( &tmp->id ) );
 	}
 	printf( "\n" );
 }
+
+void main()
+{
+	//测试moon num
+	if( test_moon_num() < 0 ){
+		printf( "test moon num error!\n" );
+	}else{
+		printf( "test moon num success!\n" );
+	}
+}
+
