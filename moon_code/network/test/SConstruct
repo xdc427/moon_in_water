@@ -1,3 +1,7 @@
 Import( 'env' )
 
-env.Program( 'test.c' )
+env.Move_head( 'pthread_pool_test.sh', '../test/pthread_pool_test.sh' )
+env.Program( 'pthread_pool_test.c' )
+
+env.Program( 'timer_test.c' )
+

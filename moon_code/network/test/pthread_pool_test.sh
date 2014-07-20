@@ -1,0 +1,1 @@
+./pthread_pool_test "$1" | tee >( grep ":pthread_pool_test_error:" | wc -l ) >( grep ":pthread_pool_test:" | sort -n -t : -k 7 | awk -F: '{ if( ( i%2 ) != 0 ){ if( prev != $7 ){ print "error";exit;}else if( $4 > prev_time ){ total_time += $4 - prev_time; }} prev = $7; prev_time = $4; i++; } END{ print "ok:"total_time/i*2"us:"i;}' ) > /dev/null

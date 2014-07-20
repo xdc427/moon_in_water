@@ -6,60 +6,71 @@
 #include<string.h>
 #include<stdarg.h>
 #include<errno.h>
+#include<ctype.h>
 #include"ring_buffer.h"
+#include"common_interfaces.h"
 #include"moon_debug.h"
 
-#define LONG_BITS ( sizeof( long ) << 3 )
-enum{ 
-	RING_MAX = 1024
-};
+#ifdef MODENAME
+#undef MODENAME
+#endif
+#define MODENAME "ring_buffer"
 
 //他应当有一个管道之类的东西，当检测到变化时向外输出信息，这些都应当自动生成，
 //像水一样可以适配各种情况，我们需要一种手段来标记观测变量，以及标记观测变量的变化。
 //当观测变量变化时，我们能用生成的代码自动编码信息，这可用附在其上的脚本来实现。
-struct ring_s{
-	pthread_mutex_t mutex;
-	pthread_cond_t con_reader;
-	pthread_cond_t con_writer;
+typedef struct ring_s{
+	int ref_num;
+	int is_destroy;
 	unsigned int cur; //watch variable
 	unsigned int end; //watch variable
 	unsigned int length;
 	unsigned int flags;
-	int is_destroy;
-};//actual data appended
-typedef struct ring_s ring_s;
+	pthread_mutex_t mutex;
+	pthread_cond_t con_reader;
+	pthread_cond_t con_writer;
+	char buffer[ 0 ];
+} ring_s;//actual data appended
 typedef struct ring_s * ring;
 
-struct ring_quote_s{
-	unsigned long quote_num;
-	ring ring;
-};
-typedef struct ring_quote_s ring_quote_s;
-typedef struct ring_quote_s * ring_quote;
+static int ring_read( void * p_data, char *out, unsigned len, unsigned flags, ...);
+static int ring_write( void * p_data, char *in, unsigned len, unsigned flags, ...);
+static void ring_close( void * p_data );
+static void ring_ref_inc( void * p_data );
+static void ring_ref_dec( void * p_data );
 
-static ring_quote_s quoter[ RING_MAX ] = { { 0 } };
-static pthread_mutex_t mutex_map = PTHREAD_MUTEX_INITIALIZER;
+STATIC_BEGAIN_INTERFACE( ring_hub )
+STATIC_DECLARE_INTERFACE( gc_interface_s )
+STATIC_DECLARE_INTERFACE( io_interface_s )
+STATIC_END_DECLARE_INTERFACE( ring_hub, 2 )
+STATIC_GET_INTERFACE( ring_hub, gc_interface_s, 0 ) = {
+	.ref_inc = ring_ref_inc,
+	.ref_dec = ring_ref_dec
+}
+STATIC_GET_INTERFACE( ring_hub, io_interface_s, 1 ) = {
+	.read = ring_read,
+	.write = ring_write,
+	.close = ring_close
+}
+STATIC_END_INTERFACE( NULL )
 
-/*
- * output: -1 fail, >= 0 ok
- */ 
-static inline int get_free_ring( ring_quote quoter, unsigned int len )
+static inline void ring_free( ring des_ring )
 {
-	int i = 0;
-	
-	for( i = 0; i < len; i++ ){
-		if( quoter->quote_num == 0 ){
-			return i;
-		}
-	}
-	return -1;
+	pthread_cond_destroy( &des_ring->con_writer );
+	pthread_cond_destroy( &des_ring->con_reader );
+	pthread_mutex_destroy( &des_ring->mutex );
+	free( GET_INTERFACE_START_POINT( des_ring ) );
 }
 
-static inline ring ring_init( unsigned buffer_len, unsigned int flags )
+/*
+ *output: NULL fail, !NULL ok
+ */
+void * ring_new( unsigned int buffer_len, unsigned int flags )
 {
-	ring new_ring = NULL;
+	ring new_ring;
 
-	if( ( new_ring = malloc( sizeof( *new_ring ) + buffer_len ) ) == NULL ){
+	if( ( new_ring = MALLOC_INTERFACE_ENTITY( sizeof( *new_ring ) + buffer_len + 1
+			, 0, 0 ) ) == NULL ){
 		goto malloc_error;
 	}
 	if( pthread_mutex_init( &new_ring->mutex, NULL ) != 0 ){
@@ -71,8 +82,13 @@ static inline ring ring_init( unsigned buffer_len, unsigned int flags )
 	if( pthread_cond_init( &new_ring->con_writer, NULL ) != 0 ){
 		goto con_writer_error;
 	}
+
+	BEGAIN_INTERFACE( new_ring );
+	END_INTERFACE( GET_STATIC_INTERFACE_HANDLE( ring_hub ) );
+
+	new_ring->ref_num = 1;
 	new_ring->flags = flags;
-	new_ring->length = buffer_len;
+	new_ring->length = buffer_len + 1;
 	//trigger here
 	new_ring->cur = 0;
 	new_ring->end = 0;
@@ -84,124 +100,9 @@ con_writer_error:
 con_reader_error:
 	pthread_mutex_destroy( &new_ring->mutex );
 mutex_error:
-	if( new_ring != NULL ){
-		free( new_ring );
-	}
+	free( new_ring );
 malloc_error:
 	return NULL;
-}
-
-static inline void ring_free( ring des_ring )
-{
-	if( des_ring == NULL ){
-		return;
-	}
-	pthread_cond_destroy( &des_ring->con_writer );
-	pthread_cond_destroy( &des_ring->con_reader );
-	pthread_mutex_destroy( &des_ring->mutex );
-	//printf("free ok\n");
-	free( des_ring );
-}
-
-/*
- *output: -1 fail, >= 0 ok
- */
-int ring_new( unsigned int buffer_len, unsigned int flags )
-{
-	int index = -1;
-	ring new_ring = NULL;
-	
-	if( buffer_len <= 0 ){
-		return -1;
-	}
-
-	pthread_mutex_lock( &mutex_map );
-	index = get_free_ring( quoter, RING_MAX );
-	pthread_mutex_unlock( &mutex_map );
-	if( index < 0 || ( new_ring = ring_init( buffer_len, flags ) ) == NULL ){
-		return -1; 
-	}   
-	pthread_mutex_lock( &mutex_map );
-	if( quoter[ index ].quote_num != 0
-			&& ( index = get_free_ring( quoter, RING_MAX ) ) == -1 ){
-		pthread_mutex_unlock( &mutex_map );
-		ring_free( new_ring );
-		return -1;
-	}
-	quoter[ index ].quote_num = 1;
-	quoter[ index ].ring = new_ring;
-	pthread_mutex_unlock( &mutex_map );
-	return index;
-}
-
-/*
- *output: -1 error, >=0 ok
- *input: fd 要加入的ring句柄
- */
-int ring_join( int fd )
-{
-	if( fd < 0 || fd >= RING_MAX ){
-		return -1;
-	}
-	pthread_mutex_lock( &mutex_map );
-	if( quoter[ fd ].quote_num == 0 ){
-		pthread_mutex_unlock( &mutex_map );
-		return -1;
-	}
-	quoter[ fd ].quote_num++;
-	pthread_mutex_unlock( &mutex_map );
-	return fd;
-}
-
-void ring_leave( int fd, int is_destroy )
-{
-	ring des_ring = NULL;
-
-	if( fd < 0 || fd >= RING_MAX ){
-		return;
-	}
-	if( is_destroy ){
-		pthread_mutex_lock( &mutex_map );
-		switch( quoter[ fd ].quote_num ){
-		case 0:
-			pthread_mutex_unlock( &mutex_map );
-			return;
-		case 1: //need delete it
-			des_ring = quoter[ fd ].ring ;
-			quoter[ fd ].ring = NULL;
-			quoter[ fd ].quote_num = 0;
-			pthread_mutex_unlock( &mutex_map );
-			ring_free( des_ring );
-			return;
-		default:
-			des_ring = quoter[ fd ].ring;
-			pthread_mutex_unlock( &mutex_map );
-		}
-		pthread_mutex_lock( &des_ring->mutex );
-		des_ring->is_destroy = 1;
-		pthread_cond_broadcast( &des_ring->con_reader );
-		pthread_cond_broadcast( &des_ring->con_writer );
-		pthread_mutex_unlock( &des_ring->mutex );
-	}
-
-	pthread_mutex_lock( &mutex_map );
-	switch( quoter[ fd ].quote_num ){
-	case 0:
-		//if is_destroy ,then panic error !!!!!
-		pthread_mutex_unlock( &mutex_map );
-		return;
-	case 1:
-		des_ring = quoter[ fd ].ring;
-		quoter[ fd ].ring = NULL;
-		quoter[ fd ].quote_num = 0;
-		pthread_mutex_unlock( &mutex_map );
-		ring_free( des_ring );
-		return;
-	default:
-		quoter[ fd ].quote_num--;
-		pthread_mutex_unlock( &mutex_map );
-
-	}
 }
 
 static inline void tv_addup( struct timeval * dst, struct timeval * src )
@@ -234,27 +135,12 @@ static inline int tv_compare( struct timeval * tv1, struct timeval * tv2 )
 	}
 }
 
-static inline ring ring_search( int fd )
-{
-	ring tmp = NULL;
-
-	if( fd < 0 || fd >= RING_MAX ){
-		return NULL;
-	}
-	pthread_mutex_lock( &mutex_map );
-	if( quoter[ fd ].quote_num != 0 ){
-		tmp = quoter[ fd ].ring;
-	}
-	pthread_mutex_unlock( &mutex_map );
-	return tmp;
-}
-
 /*
  *output: -1 error, >= 0 ok
  */
-int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
+static int ring_read( void * p_data, char *out, unsigned len, unsigned flags, ...)
 {
-	ring cur_ring = NULL;
+	ring cur_ring;
 	struct timeval tv, now;
 	struct timespec ts;
 	int peek_skip = 0;
@@ -267,11 +153,10 @@ int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
 	int tmp, ret, tmp_skip;
 	char * buffer;
 
-	if( fd < 0 || fd >= RING_MAX || out == NULL || len == 0 )
+	if( p_data == 0 || out == NULL || len == 0 ){
 		return 0;
-	if( ( cur_ring = ring_search( fd ) ) == NULL ){
-		return -1;
 	}
+	cur_ring = ( ring )p_data;
 	va_start( val, flags );
 	if( flags & RING_TIMEOUT ){
 		tv = *va_arg( val, struct timeval * );
@@ -280,7 +165,10 @@ int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
 	}
 	if( flags & RING_PEEK ){
 		peek_skip = va_arg( val, int );
-		if( peek_skip < 0 || peek_skip >= cur_ring->length-1 ){
+		if( peek_skip < 0 || peek_skip >= cur_ring->length - 1 ){
+			return 0;
+		}
+		if( ( flags & RING_MSGMODE ) && out_len > cur_ring->length -1 - peek_skip ){
 			return 0;
 		}
 		if( out_len > cur_ring->length - 1 - peek_skip ){
@@ -289,7 +177,7 @@ int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
 	}
 	va_end( val );
 
-	buffer = ( char * )( cur_ring + 1 );
+	buffer = cur_ring->buffer;
 	pthread_mutex_lock( &cur_ring->mutex );
 	while( 1 ){
 		tmp = cur_ring->length - cur_ring->cur;
@@ -297,6 +185,9 @@ int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
 		cur_can_read = ( ( tmp + cur_ring->end ) % cur_ring->length ) - peek_skip;
 		cur_need_read = out_len - already_read;
 		really_read = cur_need_read > cur_can_read ? cur_can_read : cur_need_read;
+		if( flags & RING_MSGMODE && really_read < cur_need_read ){
+			really_read = 0;
+		}
 		if( really_read  > 0 ){
 			if( cur_ring->end < cur_ring->cur && tmp > peek_skip && tmp_skip < really_read ){
 				memcpy( out + already_read, buffer + cur_ring->cur + peek_skip, tmp_skip );
@@ -304,17 +195,21 @@ int ring_read( int fd, char *out, unsigned int len, unsigned int flags, ...)
 			}else{
 				memcpy( out + already_read, buffer + cur_ring->cur + peek_skip, really_read );
 			}
-			//test
-			//gettimeofday( &now, NULL );
-			//*( out + already_read + really_read ) = 0;
-			//fprintf( stdout, "%ld%06ld:%s\n", now.tv_sec, now.tv_usec, out + already_read );
-			//fflush( stdout );
-
-			//test
-			MOON_TEST(
-				*( out + already_read + really_read ) = 0;
-				MOON_PRINT( TEST, "ring_read", "%s", out + already_read );
-			);
+#ifdef MOON_TEST
+			do{
+				int i;
+				char c;
+				char * str;
+				str = out + already_read;
+				for( i = 0; i < really_read && isprint( str[ i ] ); i++ )
+					;
+				if( i != 0 ){
+					CUT_STRING( str, i, c );
+					MOON_PRINT( TEST, "ring_read", "%s", str );
+					RECOVER_STRING( str, i, c );
+				}
+			}while( 0 );
+#endif
 
 			already_read += really_read;
 			if( ( flags & RING_PEEK ) == 0 ){
@@ -365,7 +260,7 @@ read_over:
 /*
  *output: -1 error, >= 0 ok
  */
-int ring_write( int fd, char *in, unsigned int len, unsigned int flags, ...)
+static int ring_write( void * p_data, char *in, unsigned len, unsigned flags, ...)
 {
 	ring cur_ring;
 	va_list va;
@@ -378,11 +273,12 @@ int ring_write( int fd, char *in, unsigned int len, unsigned int flags, ...)
 	int tmp, ret;
 	char *buffer;
 
-	if( fd < 0 || fd >= RING_MAX || in == NULL || len <= 0 ){
+	if( p_data == NULL || in == NULL || len <= 0 ){
 		return 0;
 	}
-	if( ( cur_ring = ring_search( fd ) ) == NULL ){
-		return -1;
+	cur_ring = ( ring )p_data;
+	if( ( flags & RING_MSGMODE ) && cur_ring->length - 1 < len ){
+		return 0;;
 	}
 	va_start( va, flags );
 	if( flags & RING_TIMEOUT ){
@@ -392,7 +288,7 @@ int ring_write( int fd, char *in, unsigned int len, unsigned int flags, ...)
 	}
 	va_end( va );
 
-	buffer = ( char * )( cur_ring + 1 );
+	buffer = cur_ring->buffer;
 	pthread_mutex_lock( &cur_ring->mutex );
 	while(1){
 		if( cur_ring->is_destroy == 1 ){
@@ -411,39 +307,33 @@ int ring_write( int fd, char *in, unsigned int len, unsigned int flags, ...)
 		}else{
 			really_write = cur_need_write > cur_can_write ? cur_can_write : cur_need_write;
 		}
-		//printf( "cur:end:cur_need_write:cur_can_write:really_write: > %d:%d:%d:%d:%d\n"
-		//	, cur_ring->cur, cur_ring->end, cur_need_write, cur_can_write, really_write );
+		if( flags & RING_MSGMODE && really_write < cur_need_write ){
+			really_write = 0;
+		}
 		if( really_write > 0 ){
 			if( cur_ring->end >= cur_ring->cur && tmp < really_write ){
-				//printf( "cp:%d-%d\n", cur_ring->end, cur_ring->end + tmp );
 				memcpy( buffer + cur_ring->end, in + already_write, tmp );
-				//printf( "cp:%d-%d\n", 0, really_write - tmp );
 				memcpy( buffer, in + already_write + tmp, really_write - tmp );
 			}else{
-				//printf( "cp:%d-%d\n", cur_ring->end, cur_ring->end + really_write );
 				memcpy( buffer + cur_ring->end, in + already_write, really_write );
 			}
 
-			/*test
-			
-			char c;
-			gettimeofday( &now, NULL );
-			c = *( in + already_write + really_write );
-			*( in + already_write + really_write ) = 0;
-			fprintf( stderr, "%ld%06ld:%s\n", now.tv_sec, now.tv_usec, in + already_write );
-			fflush( stderr );
-			*( in +already_write + really_write ) = c;
-		
-			test*/
-			MOON_TEST(
+#ifdef MOON_TEST
+			do{
+				int i;
 				char c;
-				c = *( in + already_write + really_write );
-				*( in + already_write + really_write ) = 0;
-				MOON_PRINT( TEST, "ring_write", "%s", in + already_write );
-				*( in +already_write + really_write ) = c;
-			);
+				char * str;
+				str = in + already_write;
+				for( i = 0; i < really_write && isprint( str[ i ] ); i++ )
+					;
+				if( i != 0 ){
+					CUT_STRING( str, i, c );
+					MOON_PRINT( TEST, "ring_write", "%s", str );
+					RECOVER_STRING( str, i, c );
+				}
+			}while( 0 );
+#endif
 			already_write += really_write;
-			//printf( "already_write:%d\n", already_write );
 			cur_ring->end += really_write;
 			cur_ring->end %= cur_ring->length;
 			if( really_write > cur_can_write ){
@@ -483,6 +373,44 @@ int ring_write( int fd, char *in, unsigned int len, unsigned int flags, ...)
 				pthread_cond_wait( &cur_ring->con_writer, &cur_ring->mutex );
 			}
 		}
+	}
+}
+
+static void ring_close( void * p_data )
+{
+	ring p_ring;
+
+	p_ring = ( ring )p_data;
+	pthread_mutex_lock( &p_ring->mutex );
+	if( p_ring->is_destroy == 0 ){
+		p_ring->is_destroy = 1;
+		pthread_cond_broadcast( &p_ring->con_reader );
+		pthread_cond_broadcast( &p_ring->con_writer );
+	}
+	pthread_mutex_unlock( &p_ring->mutex );
+}
+
+static void ring_ref_inc( void * p_data )
+{
+	GC_REF_INC( ( ring )p_data  );
+}
+
+static void ring_ref_dec( void * p_data )
+{
+	ring p_ring;
+	int ref_num;
+
+	p_ring = ( ring )p_data;
+	ref_num = GC_REF_DEC( p_ring );
+	if( ref_num > 0 ){
+		return;
+	}else if( ref_num == 0 ){
+		if( p_ring->is_destroy == 0 ){
+			MOON_PRINT_MAN( ERROR, "ring buffer not closed when free!" );
+		}
+		ring_free( p_ring );
+	}else{
+		MOON_PRINT_MAN( ERROR, "ref num under overflow!" );
 	}
 }
 

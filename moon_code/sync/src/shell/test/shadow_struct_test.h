@@ -1,0 +1,13 @@
+inline void * get_test_code_head_addr();
+inline unsigned long get_test_code_head_size();
+inline unsigned long get_test_code_head_elem_size();
+inline unsigned long get_test_code_head_len();
+inline void * get_test_code_data_addr();
+inline unsigned long get_test_code_data_size();
+inline unsigned long get_test_code_data_elem_size();
+inline unsigned long get_test_code_data_len();
+inline void * get_test_code_data_point_addr();
+inline unsigned long get_test_code_data_point_size();
+inline unsigned long get_test_code_data_point_elem_size();
+inline unsigned long get_test_code_data_point_len();
+struct_all shadow_struct_test_code_init();

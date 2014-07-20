@@ -1,11 +1,17 @@
 Import( 'env' )
 
-obj = []
-cur_env = env.Clone()
-def make_head( source, target, env, for_signature):
-	return 'cp %s %s' % ( source[0], target[0] )
+objs = []
+env.Move_head( [ '#./moon_code/include_%s/moon_common.h' % ( env['MOON_TARGET'] ) ], [ 'moon_common.h' ] )
+env.Move_head( [ '#./moon_code/include_%s/moon_interface.h' % ( env['MOON_TARGET'] ) ], [ 'moon_interface.h' ] )
+env.Move_head( [ '#./moon_code/include_%s/moon_pipe.h' % ( env['MOON_TARGET'] ) ], [ 'moon_pipe.h' ] )
+env.Move_head( [ '#./moon_code/include_%s/common_interfaces.h' % ( env['MOON_TARGET'] ) ], [ 'common_interfaces.h' ] )
 
-bld = Builder( generator = make_head )
-cur_env.Append( BUILDERS = { 'Foo' : bld } )
-cur_env.Foo( '#./moon_code/include_%s/moon_common.h' % ( env['MOON_TARGET'] ), [ 'moon_common.h' ] )
-Return( 'obj' )
+#obj = env.Object( 'moon_max_min_heap_%s' % env[ 'MOON_TARGET' ], 'moon_max_min_heap.c' )
+#objs.append( obj )
+obj = env.Object( 'moon_avltree_%s' % env[ 'MOON_TARGET' ], 'moon_avltree.c' )
+objs.append( obj )
+obj = env.Object( 'moon_pipe_%s' % env[ 'MOON_TARGET' ], 'moon_pipe.c' )
+objs.append( obj )
+
+Return( 'objs' )
+

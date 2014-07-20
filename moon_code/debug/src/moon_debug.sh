@@ -41,7 +41,7 @@ END{
 }' 
 cat $1 
 echo 
-echo "void moon_print( char * name, char * level, char * xid, char * body, ... );"
+echo "void moon_print( const char * name, const char * level, const char * xid, const char * body, ... );"
 echo 
 echo "#endif"
 

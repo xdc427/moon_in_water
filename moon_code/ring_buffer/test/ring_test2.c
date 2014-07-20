@@ -1,3 +1,4 @@
+#include<sys/time.h>
 #include<stdio.h>
 #include<pthread.h>
 #include<time.h>
@@ -5,9 +6,9 @@
 #include<signal.h>
 #include<string.h>
 #include"ring_buffer.h"
+#include"common_interfaces.h"
 
 const char base[] = "abcdefghjkmnpqrstwxyz23456789";
-int ring_fd = -1;
 
 void dump()
 {
@@ -36,19 +37,20 @@ void * worker_fun( void * arg )
 	int len = 100;
 	char * buffer = NULL;
 	int i, j, ret;
+	gc_interface_s * p_gc_i;
+	io_interface_s * p_ring_i;
 	
-
-	ring_join( ring_fd );
-
+	p_ring_i = FIND_INTERFACE( arg, io_interface_s );
+	p_gc_i = FIND_INTERFACE( arg, gc_interface_s );
 	buffer = malloc( len + 1 );
 	for( i = 0; i < num; i++ ){
 		for( j = 0; j < len; j++ ){
 			buffer[ j ] = base[ rand() % ( sizeof( base ) - 1 ) ];
 		}
-		ret = ring_write( ring_fd, buffer, len, RING_REPLACE_OLD );
+		ret = p_ring_i->write( arg, buffer, len, RING_REPLACE_OLD );
 		//printf( "write num:%d\n", ret );
 	}
-	ring_leave( ring_fd, 1 );
+	p_gc_i->ref_dec( arg );
 	if( buffer != NULL ){
 		free( buffer );
 	}
@@ -62,16 +64,19 @@ void * consumer_fun( void * arg)
 	unsigned int flags = 0;
 	struct timeval tv;
 	int buffer_len;
+	gc_interface_s * p_gc_i;
+	io_interface_s * p_ring_i;
 	
+	p_ring_i = FIND_INTERFACE( arg, io_interface_s );
+	p_gc_i = FIND_INTERFACE( arg, gc_interface_s );
 	buffer_len = 8 ;
 	buffer = malloc( buffer_len );
-	ring_join( ring_fd );
 	sleep(10);
 	while(1){
-		if( ( ret = ring_read( ring_fd, buffer, buffer_len - 1, 0 ) )== -1 ){
+		if( ( ret = p_ring_i->read( arg, buffer, buffer_len - 1, 0 ) )== -1 ){
 			free( buffer );
-			ring_leave( ring_fd, 0 );
-			return;
+			p_gc_i->ref_dec( arg );
+			return NULL;
 		}
 		buffer[ ret ] = '\0';
 	}
@@ -85,21 +90,31 @@ void main()
 	int worker_num = 0;
 	int consumer_num = 0;
 	int i;
-
+	void * ring_fd;
+	gc_interface_s * p_gc_i;
+	io_interface_s * p_ring_i;
+	
 //	signal( SIGSEGV, &dump );
 	gettimeofday( &tv, NULL );
 	srand( tv.tv_usec );
 	ring_fd = ring_new( 1 + 8, 0 );
+	p_ring_i = FIND_INTERFACE( ring_fd, io_interface_s );
+	p_gc_i = FIND_INTERFACE( ring_fd, gc_interface_s );
 
 	worker_num = 1 ;
 	consumer_num = 1;
 	thread = calloc( sizeof( pthread_t ), worker_num + consumer_num );
 	for( i = 0; i < worker_num + consumer_num; i++ ){
-		pthread_create( &thread[ i ], NULL, i < worker_num ? worker_fun : consumer_fun , NULL );
+		p_gc_i->ref_inc( ring_fd );
+		if( pthread_create( &thread[ i ], NULL
+			, i < worker_num ? worker_fun : consumer_fun , ring_fd ) != 0 ){
+			p_gc_i->ref_dec( ring_fd );
+		}
 	}
 	for( i = 0; i < worker_num + consumer_num; i++ ){
 		pthread_join( thread[i], &status );
 	}
-	ring_leave( ring_fd, 0 );
+	p_ring_i->close( ring_fd );
+	p_gc_i->ref_dec( ring_fd );
 }
 

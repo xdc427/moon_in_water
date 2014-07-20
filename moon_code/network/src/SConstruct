@@ -1,12 +1,21 @@
 Import( 'env' )
 
-cur_env = env.Clone()
-def make_head( source, target, env, for_signature):
-	return 'cp %s %s' % ( source[0], target[0] )
+objs = []
+'''
+env.Move_head( '#./moon_code/include_%s/moon_packet2.h' % ( env['MOON_TARGET'] ), [ 'moon_packet2.h' ] )
+obj = env.Object( 'moon_packet2_%s' % ( env['MOON_TARGET'] ), 'moon_packet2.c' )
+'''
+env.Move_head( '#./moon_code/include_%s/moon_timer.h' % ( env['MOON_TARGET'] ), [ 'moon_timer.h' ] )
+obj = env.Object( 'moon_timer_%s' % ( env['MOON_TARGET'] ), 'moon_timer.c' )
+objs.append( obj )
 
-bld = Builder( generator = make_head )
-cur_env.Append( BUILDERS = { 'Foo' : bld } )
-cur_env.Foo( '#./moon_code/include_%s/moon_packet.h' % ( env['MOON_TARGET'] ), [ 'moon_packet.h' ] )
-obj = cur_env.Object( 'moon_packet_%s' % ( env['MOON_TARGET'] ), 'moon_packet.c' )
-Return( 'obj' )
+env.Move_head( '#./moon_code/include_%s/moon_pthread_pool.h' % ( env['MOON_TARGET'] ), [ 'moon_pthread_pool.h' ] )
+obj = env.Object( 'moon_pthread_pool_%s' % ( env['MOON_TARGET'] ), 'moon_pthread_pool.c' )
+objs.append( obj )
+
+env.Move_head( '#./moon_code/include_%s/common_socket.h' % ( env['MOON_TARGET'] ), [ 'common_socket.h' ] )
+obj = env.Object( 'common_socket_%s' % ( env['MOON_TARGET'] ), 'common_socket.c' )
+objs.append( obj )
+
+Return( 'objs' )
 

@@ -1,6 +1,8 @@
 #ifndef _MOON_PACKET_H_
 #define _MOON_PACKET_H_
 
+#define PACKET_MODEL "moon_packet"
+
 typedef struct packet_elem_s{
 	char id[ 64 ];
 	int len;
@@ -21,11 +23,13 @@ int set_packet_elem_len( packet_model p_model, char * id, int len );
 int set_packet_elem_len_position( packet_model p_model, int len, int position );
 int get_packet_elem_len( packet_model p_model );
 int set_packet_elem_data_position( packet_model p_model, void * data, int position );
-void  *  get_packet_elem_data_position( packet_model p_model, int position );
+void * get_packet_elem_data_position( packet_model p_model, int position );
 char * get_packet_elem_buf( packet_model p_model );
 int next_packet_elem( packet_model p_model );
 void free_packet( packet_model p_model );
+void free_packet_without_buf( packet_model p_model );
 int process_packet( packet_model p_model );
+int get_packed_len( packet_model p_model ); //获取当前已打包的数据长度
 void packet_model_print( );
 void packet_instantiation_model_print( packet_model p_model );
 

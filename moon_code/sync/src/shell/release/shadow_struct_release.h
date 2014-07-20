@@ -1,0 +1,10 @@
+inline void * get_x_shadow1_head_addr();
+inline unsigned long get_x_shadow1_head_size();
+inline unsigned long get_x_shadow1_head_elem_size();
+inline unsigned long get_x_shadow1_head_len();
+inline void * get_x_shadow2_head_addr();
+inline unsigned long get_x_shadow2_head_size();
+inline unsigned long get_x_shadow2_head_elem_size();
+inline unsigned long get_x_shadow2_head_len();
+struct_all shadow_struct_x_shadow1_init();
+struct_all shadow_struct_x_shadow2_init();

@@ -1,4 +1,12 @@
+#coding:utf-8
+
 Import( 'env' )
 
-env.Program( 'test.c' )
+#测试大小端转化
+env.Program( 'convert_test.c' )
+#测试moon_interface
+env.Program( [ 'interface_main.c', 'interface_test1.c' ] )
+#测试moon_pipe
+env.Program( 'pipe_test.c' )
+env.Move_head( 'pipe.sh', '../test/pipe.sh' )
 

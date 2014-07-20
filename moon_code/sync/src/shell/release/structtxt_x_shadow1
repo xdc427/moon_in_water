@@ -1,0 +1,5 @@
+head
+struct:list_shadow1_s:0:0
+int:id:0:0
+struct list_shadow1_s *:next:0:0
+tail

@@ -1,0 +1,4 @@
+Import( 'env' )
+
+env.Program( 'regex.c' )
+

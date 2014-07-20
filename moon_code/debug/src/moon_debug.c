@@ -9,7 +9,7 @@
 #define STRING_NULL ""
 #define REPLACE_NULL( str ) ( str == NULL ? STRING_NULL : str )
 
-void moon_print( char * name, char *level, char * xid, char * body, ... )
+void moon_print( const char * name, const char *level, const char * xid, const char * body, ... )
 {
 	va_list vl;
 	struct timeval now;
@@ -24,3 +24,4 @@ void moon_print( char * name, char *level, char * xid, char * body, ... )
 	va_end( vl );
 	fflush( stdout );
 }
+

@@ -44,10 +44,16 @@
 	( *( _p_tmp ) opt ( cmp ) ); \
 })
 
-#define SHADOW_CONNNECT( host )
-#define SHADOW_SYNC()
-#define SHADOW_VERSION( ver )
+#define SHADOW_SYNC() shadow_commit()
+#define SHADOW_ENV( xid, ver ) shadow_env_new( GET_MOON_ID( MOON_ID ), xid, ver )
+#define SHADOW_ENV_SET( env ) shadow_env_set( env )
+#define SHADOW_SERVER( xid ) shadow_entity_add( GET_MOON_ID( MOON_ID ), xid, 0 )
 #define SHADOW_EVENT( handler )
+
+#ifdef LEVEL_TEST
+#define SHADOW_PRINT_TYPES() shadow_print_types( GET_MOON_ID( MOON_ID ) )
+#define SHADOW_PRINT_RUNTIME() shadow_print_runtime();
+#endif
 
 #define SHADOW_VAR 
 #define SHADOW_POINT 
@@ -56,6 +62,7 @@
 #define SHADOW_INCLUDE
 #define SHADOW_NEW( type, n ) shadow_new( GET_MOON_ID( MOON_ID ), #type, n, sizeof( type ) * ( n ) )
 #define SHADOW_DEL( shadow_point ) shadow_del( GET_MOON_ID( MOON_ID ), shadow_point )
+#define SHADOW_INIT() version_init()
 
 #endif
 

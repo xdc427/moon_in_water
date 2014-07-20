@@ -7,6 +7,7 @@
 
 struct packet_model_s{
 	char id[ 64 ];
+	int is_start;
 	int direction;//-1 打包，1 解包
 	int cur_index;
 	int cur_position;
@@ -319,6 +320,15 @@ int get_packet_elem_len( packet_model p_model )
 	return len;
 }
 
+int get_packed_len( packet_model p_model )
+{
+	if( p_model == NULL || p_model->buf == NULL || p_model->is_start == 0 ){
+		MOON_PRINT_MAN( ERROR, "input parameter error!" );
+		return -1;
+	}
+	return p_model->buf_len - p_model->cur_position;
+}
+
 int set_packet_elem_data_position( packet_model p_model, void * data, int position )
 {
 	int next;
@@ -352,7 +362,7 @@ void  *  get_packet_elem_data_position( packet_model p_model, int position )
 
 char * get_packet_elem_buf( packet_model p_model )
 {
-	if( p_model == NULL ){
+	if( p_model == NULL || p_model->buf == NULL || p_model->is_start == 0 ){
 		MOON_PRINT_MAN( ERROR, "intput parameter error!" );
 		return NULL;
 	}
@@ -367,6 +377,10 @@ int next_packet_elem( packet_model p_model )
 	if( p_model == NULL || p_model->buf == NULL ){
 		MOON_PRINT_MAN( ERROR, "input parameter erroor!" );
 		return -1;
+	}
+	if( p_model->is_start == 0 ){
+		p_model->is_start = 1;
+		return 0;
 	}
 	next = get_packet_position( p_model, 1 );
 	if( next < 0 ){
@@ -388,9 +402,6 @@ int next_packet_elem( packet_model p_model )
 
 static inline void _free_packet_data( packet_model p_model )
 {
-	if( p_model->buf != NULL ){
-		free( p_model->buf );
-	}
 #define FUNC( p_elem ) ({\
 	if( ( p_elem )->p_data == NULL ){\
 		;\
@@ -405,13 +416,21 @@ static inline void _free_packet_data( packet_model p_model )
 #undef FUNC
 }
 
+void free_packet_without_buf( packet_model p_model )
+{
+	if( p_model != NULL ){
+		_free_packet_data( p_model );
+		free( p_model );
+	}
+}
+
 void free_packet( packet_model p_model )
 {
-	if( p_model == NULL ){
-		return;
+	if( p_model != NULL ){
+		_free_packet_data( p_model );
+		IF_FREE( p_model->buf );
+		free( p_model );
 	}
-	_free_packet_data( p_model );
-	free( p_model );
 }
 
 int process_packet( packet_model p_model )
@@ -423,7 +442,7 @@ int process_packet( packet_model p_model )
 		MOON_PRINT_MAN( ERROR, "input parameter error!" );
 		return -1;
 	}
-	do{
+	while( next_packet_elem( p_model ) >= 0 ){
 		func = p_model->elem_array[ p_model->cur_index ].process_func[ ( p_model->direction + 2 ) % 3 ];
 		if( func != NULL ){
 			ret = func( get_packet_elem_buf( p_model ), get_packet_elem_len( p_model ) );
@@ -431,7 +450,7 @@ int process_packet( packet_model p_model )
 				return -1;
 			}
 		}
-	}while( next_packet_elem( p_model ) >= 0 );
+	}
 	return 0;
 }
 

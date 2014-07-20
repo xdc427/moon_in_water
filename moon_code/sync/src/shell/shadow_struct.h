@@ -1,8 +1,7 @@
-struct struct_all_s{ //struct_all_s + struct_one[] + ( struct_one_s + vvar_s[] )[]
-    unsigned long num;
-	unsigned long size;
-	unsigned char md5_sum[ 16 ];
-};
+#ifndef _SHADOW_STRUCT_H_
+#define _SHADOW_STRUCT_H_
+
+struct struct_all_s;
 typedef struct struct_all_s struct_all_s;
 typedef struct struct_all_s * struct_all;
 
@@ -30,4 +29,13 @@ int float_copy( block_copy p_copy );
 int get_target_offset( struct_all p_src_all, struct_all p_dst_all, int offset, int type_index, int num );
 int get_struct_len( struct_all p_all, int type_index );
 int get_struct_points_num( struct_all p_all, int type_index );
+void print_struct_all( struct_all );
+struct_all dump_struct_all( struct_all );
+void free_struct_all( struct_all );
+
+#ifdef LEVEL_TEST
+void set_type_size( struct_all p_all, char * type, int size );
+#endif
+
+#endif
 

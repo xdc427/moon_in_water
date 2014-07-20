@@ -1,5 +1,8 @@
 #include"moon_debug.h"
 
+#ifdef MODENAME
+#undef MODENAME
+#endif
 #define MODENAME "test"
 void main(){
 	MOON_WARNNING(

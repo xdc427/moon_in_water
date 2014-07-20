@@ -1,0 +1,689 @@
+#include<stdio.h>
+#include<unistd.h>
+#include<pthread.h>
+#include<stdlib.h>
+#include<time.h>
+#include<fcntl.h>
+#include<errno.h>
+#include<netdb.h>
+#include<sys/socket.h>
+#include<sys/epoll.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<sys/types.h>
+#include<regex.h>
+#include"moon_debug.h"
+#include"moon_pipe.h"
+#include"common_socket.h"
+#include"common_interfaces.h"
+
+//分为三个层面：使用者（session），(本体（socket），驱动者（listen task）)这两者是內聚的
+
+typedef enum{
+	UNJOIN_SOCKET,//未加入epoll
+	JOIN_SOCKET,//加入epoll
+	CONNECT_SOCKET,
+	LISTEN_SOCKET,
+	NO_SOCKET
+} fd_cat_e;
+
+typedef struct{
+	int status;
+	int epoll_fd;
+	int max_socket_num;//<0,则为无限制
+	int cur_socket_num;
+	pthread_t listen_task;
+	pthread_mutex_t mutex;
+} socket_pool_s;
+typedef socket_pool_s * socket_pool;
+
+typedef struct{
+	int status;
+	int socket_fd;
+	socket_pool p_spool;
+	fd_cat_e fd_cat;
+	pipe_interface p_pipe_i;
+	io_listener_interface p_io_listener_i;
+	struct sockaddr_storage addr;
+} socket_private_s;
+typedef socket_private_s * socket_private;
+
+void * get_socketpool_instance();
+static void get_pipe_data_len( void * p_data, int * p_len );
+static int new_socket( void * p_data, void * p_pipe, const char * ip, const char * port );
+static int new_listen_socket( void * p_data, void * p_pipe, const char * port );
+static void socket_close( void * p_data, void * p_pipe );
+static int socket_read( void * p_data, void * p_pipe, char * buf, int len, int flags, ... );
+static int socket_write( void * p_data, void * p_pipe, char * buf, int len, int flags, ... );
+static int socket_control( void * p_data, void * p_pipe, int cmd, ... );
+static void * listen_task( void * arg );
+
+//socket_pool interfaces
+STATIC_BEGAIN_INTERFACE( socketpool_hub )
+STATIC_DECLARE_INTERFACE( socketpool_interface_s )
+STATIC_DECLARE_INTERFACE( pipe_listener_interface_s )
+STATIC_END_DECLARE_INTERFACE( socketpool_hub, 2, socket_pool_s spool )
+STATIC_GET_INTERFACE( socketpool_hub, socketpool_interface_s, 0 ) = {
+	.new_listen_socket = new_listen_socket,
+	.new_socket = new_socket
+}
+STATIC_GET_INTERFACE( socketpool_hub, pipe_listener_interface_s, 1 ) = {
+	.get_pipe_data_len = get_pipe_data_len,
+	.close = socket_close
+}
+STATIC_INIT_USERDATA( spool ) = {
+	.max_socket_num = -1,
+	.mutex = PTHREAD_MUTEX_INITIALIZER
+}
+STATIC_END_INTERFACE( NULL )
+
+//socket interfaces
+STATIC_BEGAIN_INTERFACE( socket_hub )
+STATIC_DECLARE_INTERFACE( io_pipe_interface_s )
+STATIC_DECLARE_INTERFACE( pipe_listener_interface_s )
+STATIC_END_DECLARE_INTERFACE( socket_hub, 2 )
+STATIC_GET_INTERFACE( socket_hub, io_pipe_interface_s, 0 ) = {
+	.read = socket_read,
+	.write = socket_write,
+	.close = socket_close,
+	.control = socket_control
+}
+STATIC_GET_INTERFACE( socket_hub, pipe_listener_interface_s, 1 ) ={
+	.close = socket_close
+}
+STATIC_END_INTERFACE( NULL )
+
+void * get_socketpool_instance()
+{
+	socket_pool p_spool;
+	pthread_attr_t attr;
+	int ret;
+
+	p_spool = &socketpool_hub.spool;
+	if( __builtin_expect( p_spool->status == 0, 0 ) ){
+		pthread_mutex_lock( &p_spool->mutex );
+		if( p_spool->status == 0 ){
+			//初始化epoll
+			p_spool->epoll_fd = epoll_create( 1000 );
+			if( __builtin_expect( p_spool->epoll_fd < 0, 0 ) ){
+				MOON_PRINT_MAN( ERROR, "create epoll error!" );
+				goto epoll_create_error;
+			}
+			pthread_attr_init( &attr );
+			pthread_attr_setdetachstate( &attr, PTHREAD_CREATE_DETACHED );
+			ret = pthread_create( &p_spool->listen_task, &attr, listen_task, p_spool );
+			pthread_attr_destroy( &attr );
+			if( __builtin_expect( ret != 0, 0 ) ){
+				MOON_PRINT_MAN( ERROR, "create listen task thread error" );
+				goto pthread_error;
+			}
+			p_spool->status = 1;
+			goto back;
+		}
+pthread_error:
+		close( p_spool->epoll_fd );
+		p_spool->epoll_fd = -1;
+epoll_create_error:
+		p_spool = NULL;
+back:
+		pthread_mutex_unlock( &p_spool->mutex );
+	}
+	return p_spool;
+}
+
+static void get_pipe_data_len( void * p_data, int * p_len )
+{
+	if( p_len != NULL ){
+		*p_len =  sizeof( socket_private_s );
+	}
+}
+
+static int set_socket_nonblock( int sock )
+{	
+	int flags;
+	flags = fcntl( sock, F_GETFL, 0 );
+	if( flags < 0 ){
+		MOON_PRINT_MAN( ERROR, "fcntl(F_GETFL) failed" );
+		return -1;
+	}
+	if ( fcntl( sock, F_SETFL, flags | O_NONBLOCK ) < 0 ){
+		MOON_PRINT_MAN( ERROR, "fcntl(F_SETFL) failed" );
+		return -1;
+	}
+	return 0;
+}
+
+static void _socket_close( void * p_data )
+{ 
+	socket_private p_private;
+	struct epoll_event ev;
+	void * p_point, * p_point_data;
+	int ret;
+
+	p_private = p_data;
+	switch( p_private->fd_cat ){
+	case JOIN_SOCKET:
+	case UNJOIN_SOCKET:
+		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
+		if( ret >= 0 ){
+			CALL_INTERFACE_FUNC( p_point, io_listener_interface_s, close_event, p_point_data );
+			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
+		}
+	case LISTEN_SOCKET:
+	case CONNECT_SOCKET:
+		if( p_private->fd_cat != UNJOIN_SOCKET ){
+			__sync_sub_and_fetch( &p_private->p_spool->cur_socket_num, 1 );
+			epoll_ctl( p_private->p_spool->epoll_fd, EPOLL_CTL_DEL, p_private->socket_fd, &ev );
+		}
+		close( p_private->socket_fd );
+	case NO_SOCKET:
+		p_private->p_pipe_i->close( p_private );
+		CALL_INTERFACE_FUNC( p_private, gc_interface_s, ref_dec );
+		break;
+	default:
+		MOON_PRINT_MAN( ERROR, "no such socket type!" );
+	}
+}
+
+static int _new_socket( socket_private p_private, int fd, struct sockaddr_storage * p_addr )
+{
+	void * p_new_pipe[ 2 ];
+	void * p_point, * p_point_data;
+	int len, ret;
+	socket_private p_new_private;
+	order_listener_interface p_order_i;
+	pipe_interface p_pipe_i;
+
+	len = 0;
+	p_pipe_i = p_private->p_pipe_i;
+	ret = set_socket_nonblock( fd );
+	if( __builtin_expect( ret < 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "set nio error!" );
+		goto back;
+	}
+	ret = p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
+	if( __builtin_expect( ret < 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "get other point ref error!" );
+		goto back;
+	}
+	CALL_INTERFACE_FUNC( p_point, pipe_listener_interface_s, get_pipe_data_len, &len );
+	ret = pipe_new( p_new_pipe, sizeof( socket_private_s ), len, 1 );
+	if( __builtin_expect( ret < 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "pipe new error!" );
+		goto free_pipe_data;
+	}
+	p_new_private = p_new_pipe[ 0 ];
+	p_new_private->socket_fd = fd;
+	p_new_private->addr = *p_addr;
+	p_new_private->p_spool = p_private->p_spool;
+	p_new_private->fd_cat = UNJOIN_SOCKET;
+	p_new_private->p_pipe_i = FIND_INTERFACE( p_new_private, pipe_interface_s );
+
+	p_pipe_i = p_new_private->p_pipe_i;
+	p_pipe_i->set_point_ref( p_new_pipe[ 0 ], &socket_hub + 1 );
+	p_order_i = FIND_INTERFACE( p_point, order_listener_interface_s );
+	ret = p_order_i->on_ready( p_point, p_point_data, p_new_pipe[ 1 ] );
+	if( __builtin_expect( ret < 0 , 0 ) ){
+		MOON_PRINT_MAN( ERROR, "order ready error!" );
+		goto order_error;
+	}
+	ret = 0;
+	CALL_INTERFACE_FUNC( p_new_pipe[ 0 ], gc_interface_s, ref_dec );
+	goto free_pipe_data;
+
+order_error:
+	set_status_closed( &p_new_private->status, _socket_close, p_new_private );
+free_pipe_data:
+	CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
+	CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+back:
+	return ret;
+}
+
+static int new_socket( void * p_data, void * p_pipe, const char * ip, const char * port )
+{
+	socket_pool p_spool;
+	socket_private p_private;
+	struct addrinfo hints, * p_results;
+	int new_fd, ret;
+	pipe_interface p_pipe_i;
+	struct epoll_event ev;
+
+	ret = -1;
+	if( __builtin_expect( p_data == NULL || p_pipe == NULL || ip == NULL || port == NULL, 0 ) ){
+		if( p_pipe != NULL ){
+			CALL_INTERFACE_FUNC( p_pipe, pipe_interface_s, init_done, 1 );
+		}
+		goto back;
+	}
+	p_spool = ( socket_pool )p_data;
+	p_private = ( socket_private )p_pipe;
+
+	p_pipe_i = FIND_INTERFACE( p_pipe, pipe_interface_s );
+	p_pipe_i->set_point_ref( p_pipe, p_data );
+	p_private->p_pipe_i = p_pipe_i;
+	p_private->fd_cat = NO_SOCKET;
+	CALL_INTERFACE_FUNC( p_private, gc_interface_s, ref_inc );
+	p_pipe_i->init_done( p_pipe, 0 );
+
+	memset( &hints, 0, sizeof( hints ) );
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_NUMERICHOST;
+	if( __builtin_expect( getaddrinfo( ip, port, &hints, &p_results ) != 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "get addr info error!" );
+		goto addr_error;
+	}
+	*( ( struct sockaddr *)&p_private->addr ) = *p_results->ai_addr;
+	new_fd = socket( p_results->ai_family, p_results->ai_socktype, p_results->ai_protocol );
+	if( __builtin_expect( new_fd < 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "new sockert error" );
+		goto socket_error;
+	}
+	if( __builtin_expect( set_socket_nonblock( new_fd ) < 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "set socket nio error!" );
+		goto set_error;
+	}
+	ret = connect( new_fd, p_results->ai_addr, p_results->ai_addrlen );
+	if( ret == -1 && errno == EINPROGRESS ){//join epoll
+		ev.events = EPOLLOUT | EPOLLET;
+		ev.data.ptr = p_private;
+		ret = useing_ref_inc( &p_private->status );
+		if( __builtin_expect( ret < 0, 0 ) ){
+			goto set_error;
+		}
+		p_private->socket_fd = new_fd;
+		p_private->fd_cat = CONNECT_SOCKET;
+		if( epoll_ctl( p_spool->epoll_fd, EPOLL_CTL_ADD, p_private->socket_fd, &ev ) == 0 ){
+			__sync_add_and_fetch( &p_spool->cur_socket_num, 1 );
+		}else{
+			MOON_PRINT_MAN( ERROR, "add socket to epoll error!" );
+			p_private->fd_cat = NO_SOCKET;
+			useing_ref_dec( &p_private->status, _socket_close, p_private );
+			goto set_error;
+		}
+		useing_ref_dec( &p_private->status, _socket_close, p_private );
+		ret = 0;
+	}else if( ret == 0 ){//success
+		ret = _new_socket( p_private, new_fd, &p_private->addr );
+		goto socket_error;
+	}
+	freeaddrinfo( p_results );
+	goto back;
+
+set_error:
+	close( new_fd );
+socket_error:
+	freeaddrinfo( p_results );
+addr_error:
+	set_status_closed( &p_private->status, _socket_close, p_private );
+back:
+	return ret;
+}
+
+static int new_listen_socket( void * p_data, void * p_pipe, const char * port )
+{
+	socket_pool p_spool;
+	socket_private p_private;
+	struct addrinfo hints, * p_results;
+	int new_fd, ret, reuse;
+	pipe_interface p_pipe_i;
+	struct epoll_event ev;
+
+	ret = -1;
+	reuse = 1;
+	if( __builtin_expect( p_data == NULL || p_pipe == NULL || port == NULL, 0 ) ){
+		if( p_pipe != NULL ){
+			CALL_INTERFACE_FUNC( p_pipe, pipe_interface_s, init_done, 1 );
+		}
+		goto back;
+	}
+	p_spool = ( socket_pool )p_data;
+	p_private = ( socket_private )p_pipe;
+
+	p_pipe_i = FIND_INTERFACE( p_pipe, pipe_interface_s );
+	p_pipe_i->set_point_ref( p_pipe, p_data );
+	p_private->p_pipe_i = p_pipe_i;
+	p_private->fd_cat = NO_SOCKET;
+	CALL_INTERFACE_FUNC( p_private, gc_interface_s, ref_inc );
+	p_pipe_i->init_done( p_pipe, 0 );
+
+	memset( &hints, 0, sizeof( hints ) );
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+	if( __builtin_expect( getaddrinfo( NULL, port, &hints, &p_results ) != 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "get addr info error!" );
+		goto addr_error;
+	}
+	*( ( struct sockaddr *)&p_private->addr ) = *p_results->ai_addr;
+	new_fd = socket( p_results->ai_family, p_results->ai_socktype, p_results->ai_protocol );
+	if( __builtin_expect( new_fd < 0, 0 ) ){
+		MOON_PRINT_MAN( ERROR, "new sockert error" );
+		goto socket_error;
+	}
+	if( setsockopt( new_fd, SOL_SOCKET, SO_REUSEADDR, ( char * )&reuse, sizeof( reuse ) ) < 0
+		|| set_socket_nonblock( new_fd ) < 0 
+		|| bind( new_fd, p_results->ai_addr, p_results->ai_addrlen ) < 0 
+		|| listen( new_fd , 15 ) < 0 ){
+		MOON_PRINT_MAN( ERROR, "bind or listen error!" );
+		goto set_error;
+	}
+
+	ev.events = EPOLLIN | EPOLLET;
+	ev.data.ptr = p_private;
+	ret = useing_ref_inc( &p_private->status );
+	if( __builtin_expect( ret < 0, 0 ) ){
+		goto set_error;
+	}
+	p_private->socket_fd = new_fd;
+	p_private->fd_cat = LISTEN_SOCKET;
+	if( epoll_ctl( p_spool->epoll_fd, EPOLL_CTL_ADD, p_private->socket_fd, &ev ) == 0 ){
+		__sync_add_and_fetch( &p_spool->cur_socket_num, 1 );
+	}else{
+		MOON_PRINT_MAN( ERROR, "add socket to epoll error!" );
+		p_private->fd_cat = NO_SOCKET;
+		useing_ref_dec( &p_private->status, _socket_close, p_private );
+		goto set_error;
+	}
+	useing_ref_dec( &p_private->status, _socket_close, p_private );
+	freeaddrinfo( p_results );
+	ret = 0;
+	goto back;
+
+set_error:
+	close( new_fd );
+socket_error:
+	freeaddrinfo( p_results );
+addr_error:
+	set_status_closed( &p_private->status, _socket_close, p_private );
+back:
+	return ret;
+}
+
+static void _socket_can_read( socket_private p_private )
+{
+	void * p_point, * p_point_data;
+	int ret;
+	socklen_t addr_len;
+	struct sockaddr_storage addr;
+
+	switch( p_private->fd_cat ){
+	case JOIN_SOCKET:
+		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
+		if( ret >= 0 ){
+			p_private->p_io_listener_i->recv_event( p_point, p_point_data );
+			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
+		}else{
+			set_status_closed( &p_private->status, _socket_close, p_private );
+		}
+		break;
+	case LISTEN_SOCKET:
+		ret = useing_ref_inc( &p_private->status );
+		if( __builtin_expect( ret < 0, 0 ) ){
+			set_status_closed( &p_private->status, _socket_close, p_private );
+			break;
+		}
+		addr_len = sizeof( addr );
+		while( 1 ){
+			ret = accept( p_private->socket_fd, ( struct sockaddr * )&addr, &addr_len );
+			if( ret >= 0 ){
+				_new_socket( p_private, ret, &addr );
+			}else{
+				if( errno == EINTR ){//interrupt
+					continue;
+				}else if( errno != EAGAIN && errno != EWOULDBLOCK ){
+					MOON_PRINT_MAN( ERROR, "accept error" );
+					set_status_closed( &p_private->status, _socket_close, p_private );
+				}
+				break;
+			}
+		}
+		useing_ref_dec( &p_private->status, _socket_close, p_private );
+		break;
+	default:
+		MOON_PRINT_MAN( ERROR, "unkoow can read socket type:%d", p_private->fd_cat );
+	}
+}
+
+static void _socket_can_write( socket_private p_private )
+{
+	void * p_point, * p_point_data;
+	int ret, result;
+	socklen_t result_len;
+	struct epoll_event ev;
+
+	switch( p_private->fd_cat ){
+	case JOIN_SOCKET:
+		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
+		if( ret >= 0 ){
+			p_private->p_io_listener_i->send_event( p_point, p_point_data );
+			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
+		}else{
+			set_status_closed( &p_private->status, _socket_close, p_private );
+		}
+		break;
+	case CONNECT_SOCKET:
+		result_len = sizeof( result );
+		ret = useing_ref_inc( &p_private->status );
+		if( __builtin_expect( ret < 0, 0 ) ){
+			set_status_closed( &p_private->status, _socket_close, p_private );
+			break;
+		}
+		ret = getsockopt( p_private->socket_fd, SOL_SOCKET, SO_ERROR, &result, &result_len );
+		if( ret == 0 ){
+			p_private->fd_cat = NO_SOCKET;
+			epoll_ctl( p_private->p_spool->epoll_fd, EPOLL_CTL_DEL, p_private->socket_fd, &ev );
+			_new_socket( p_private, p_private->socket_fd, &p_private->addr );
+		}else{
+			MOON_PRINT_MAN( ERROR, "connect error:%d", result );
+		}
+		useing_ref_dec( &p_private->status, _socket_close, p_private );
+		set_status_closed( &p_private->status, _socket_close, p_private );
+		break;
+	default:
+		MOON_PRINT_MAN( ERROR, "unkoow can write socket type:%d", p_private->fd_cat );
+	}
+}
+
+static void socket_close( void * p_data, void * p_pipe )
+{
+	socket_private p_private;
+
+	if( p_data != NULL && p_pipe != NULL ){
+		p_private = p_pipe;
+		set_status_closed( &p_private->status, _socket_close, p_private );
+	}
+}
+
+static inline int _socket_rw( socket_private p_private, char * buf, int len, int is_recv )
+{
+	int already_rw, left, ret;
+
+	if( buf == NULL || len <= 0 || p_private == NULL ){
+		MOON_PRINT_MAN( ERROR, "input paraments error!" );
+		return SOCKET_PARAERROR;
+	}
+	left = len;
+	already_rw = 0;
+	ret = useing_ref_inc( &p_private->status );
+	if( __builtin_expect( ret < 0, 0 ) ){
+		return SOCKET_CLOSED;
+	}
+	while( left > 0 ){
+		if( is_recv ){
+			ret = recv( p_private->socket_fd, buf + already_rw, left, 0 );
+		}else{
+			ret = send( p_private->socket_fd, buf + already_rw, left, 0 );
+		}
+		if( ret > 0 ){
+			already_rw += ret;
+			left -= ret;
+		}else if( ret < 0 ){
+			if( errno == EAGAIN || errno == EWOULDBLOCK ){
+				ret = SOCKET_NO_RES;
+			}else if( errno == EINTR ){
+				continue;
+			}else{
+				ret = SOCKET_ERROR;
+			}
+			break;
+		}else if( ret == 0 ){
+			ret = SOCKET_CLOSED;
+			break;
+		}
+	}
+	useing_ref_dec( &p_private->status, _socket_close, p_private );
+	if( already_rw > 0 ){
+		return already_rw;
+	}else{
+		return ret;
+	}
+}
+
+static int socket_read( void * p_data, void * p_pipe, char * buf, int len, int flags, ... )
+{
+	return _socket_rw( p_pipe, buf, len, 1 );
+}
+
+static int socket_write( void * p_data, void * p_pipe, char * buf, int len, int flags, ... )
+{
+	return _socket_rw( p_pipe, buf, len, 0 );
+}
+
+static int socket_control( void * p_data, void * p_pipe, int cmd, ... )
+{
+	socket_private p_private;
+	int tmp, ret;
+	void * p_point, *p_point_data;
+	struct epoll_event ev;
+
+	if( p_data == NULL || p_pipe == NULL ){
+		return SOCKET_PARAERROR;
+	}
+	p_private = p_pipe;
+	switch( cmd ){
+	case SOCKET_START:
+
+		ret = useing_ref_inc( &p_private->status );
+		if( ret >= 0 ){
+			do{
+				tmp = p_private->fd_cat;
+			}while( tmp == UNJOIN_SOCKET
+					&& !__sync_bool_compare_and_swap( &p_private->fd_cat, tmp, JOIN_SOCKET ) );
+			if( tmp == UNJOIN_SOCKET ){
+				ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
+				if( ret >= 0 ){
+					p_private->p_io_listener_i = FIND_INTERFACE( p_point, io_listener_interface_s );
+					CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+					CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+				}
+				ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+				ev.data.ptr = p_private;
+				ret = epoll_ctl( p_private->p_spool->epoll_fd
+					, EPOLL_CTL_ADD, p_private->socket_fd, &ev );
+				if( ret >= 0 ){
+					__sync_add_and_fetch( &p_private->p_spool->cur_socket_num, 1 );
+				}else{
+					MOON_PRINT_MAN( ERROR, "add to epoll error!" );
+					p_private->fd_cat = UNJOIN_SOCKET;
+				}
+			}
+			useing_ref_dec( &p_private->status, _socket_close, p_private );
+		}
+		if( ret < 0 ){
+			ret = SOCKET_ERROR;
+		}
+		break;
+	default:
+		ret = SOCKET_ERROR;
+		MOON_PRINT_MAN( ERROR, "unknown cmd" );
+	}
+	return ret;
+}
+
+enum{
+	MAX_EVENTS = 64
+};
+
+static void * listen_task( void * arg )
+{
+	socket_pool p_spool;
+	int i, nfds;
+	struct epoll_event events[ MAX_EVENTS ];
+	socket_private p_private;
+
+	p_spool = ( socket_pool )arg;
+	for( ; ; ){
+		nfds = epoll_wait( p_spool->epoll_fd, events, MAX_EVENTS, 100 );
+		if( nfds < 0 ){
+			MOON_PRINT_MAN( ERROR, "epoll wait error!" );
+			usleep( 100000 );
+			continue;
+		}
+		for( i = 0; i < nfds; i++ ){
+			p_private = events[ i ].data.ptr;
+			if( __builtin_expect( p_private == NULL, 0 ) ){
+				MOON_PRINT_MAN( ERROR, "fatal error:epoll events ptr is NULL" );
+				continue;
+			}
+			if( events[ i ].events & EPOLLIN ){
+				_socket_can_read( p_private );
+			}
+			if( events[ i ].events & EPOLLOUT ){
+				_socket_can_write( p_private );
+			}
+			if( events[ i ].events & EPOLLRDHUP || events[ i ].events & EPOLLERR ){//close
+				set_status_closed( &p_private->status, _socket_close, p_private );
+			}
+		}
+	}
+	return NULL;
+}
+
+//
+static char * url_regex_string = "^((\\w+)://)?(((\\w+\\.)+\\w+)|(\\[([0-9a-fA-F:.]+)\\]))(:([1-9][0-9]{0,4}))?(/.*)?$";
+static regex_t url_regex;
+static char * url_elem[ ] = { "", "", "scheame", "", "host_domain", "", "", "host_ipv6", "", "port", "path" };
+
+#define SCHEAME_INDEX 2
+#define HOST_DOMAIN_INDEX 4
+#define HOST_IPV6_INDEX 7
+#define PORT_INDEX 9
+#define PATH_INDEX 10
+
+static char * ipv4_regex_string = "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[09][0-9]|[1-9][0-9]|[0-9])$";
+static regex_t ipv4_regex;
+
+static char * ipv6_regex_string = "^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:)))(%.+)?$";
+static regex_t ipv6_regex;
+
+static int regex_init( )
+{
+	int ret;
+	char error_buf[ 128 ];
+
+	if( ( ret = regcomp( &url_regex, url_regex_string, REG_EXTENDED ) ) != 0 ){
+		regerror( ret, &url_regex, error_buf, sizeof( error_buf ) );
+		MOON_PRINT_MAN( ERROR, "url regex compile error:%s", error_buf );
+		return -1;
+	}
+	if( ( ret = regcomp( &ipv4_regex, ipv4_regex_string, REG_EXTENDED ) ) != 0 ){
+		regerror( ret, &ipv4_regex, error_buf, sizeof( error_buf ) );
+		MOON_PRINT_MAN( ERROR, "ipv4 regex compile error:%s", error_buf );
+		regfree( &url_regex );
+		return -1;
+	}
+	if( ( ret = regcomp( &ipv6_regex, ipv6_regex_string, REG_EXTENDED ) ) != 0 ){
+		regerror( ret, &ipv6_regex, error_buf, sizeof( error_buf ) );
+		MOON_PRINT_MAN( ERROR, "ipv6 regex compile error:%s", error_buf );
+		regfree( &url_regex );
+		regfree( &ipv4_regex );
+		return -1;
+	}
+	return 0;
+}
+
