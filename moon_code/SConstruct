@@ -1,7 +1,9 @@
 Import( 'env' )
 
 env.Append( LIBPATH = [ '#./moon_code' ] )
-env.Append( LIBS = [ 'moon_%s' % ( env['MOON_TARGET'] ) ] )
+libs = env[ 'LIBS' ]
+libs.insert( 0, 'moon_%s' % ( env['MOON_TARGET'] ) )
+env.Replace( LIBS = libs )
 objs = []
 #dirs = [ 'debug', 'ring_buffer', 'sync', 'network', 'common'  ]
 dirs = [ 'debug', 'ring_buffer', 'network', 'common'  ]
