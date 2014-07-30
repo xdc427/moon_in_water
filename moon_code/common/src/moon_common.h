@@ -6,6 +6,11 @@
 #include<stdlib.h>
 #include"moon_debug.h"
 
+#ifdef MODENAME
+#undef MODENAME
+#endif
+#define MODENAME "moon_common"
+
 #define IF_FREE( p ) do{\
 	if( ( p ) != NULL ){\
 		free( ( p ) );\
@@ -108,6 +113,10 @@ static inline int is_little( )
 #define MIN( a, b ) ( ( a ) > ( b ) ? ( b ) : ( a ) )
 #define MAX( a, b ) ( ( a ) < ( b ) ? ( b ) : ( a ) )
 
+#ifdef MOON_TEST
+#undef USEING_XID
+#define USEING_XID "common_useing"
+#endif
 //专用于垃圾收集的
 //状态与计数结合的深度为2的引用
 enum{
@@ -132,17 +141,20 @@ static inline int useing_ref_inc( int * p_status )
 	if( tmp + USEING_REF_UNIT < 0 ){
 		MOON_PRINT_MAN( ERROR, "useing ref up overflow!" );
 	}
+	MOON_PRINT( TEST, USEING_XID, "%p:useing:1", p_status );
 	return 0;
 }
 
 static inline int useing_ref_dec( int * p_status, closed_when_useing_ref0 close_fun, void * p_data )
 {
 	int tmp;
-
+	
+	MOON_PRINT( TEST, USEING_XID, "%p:useing:-1", p_status );
 	tmp = __sync_sub_and_fetch( p_status, USEING_REF_UNIT );
 	if( tmp < 0 ){
 		MOON_PRINT_MAN( ERROR, "useing ref dowm overflow" );
 	}else if( tmp == STATUS_CLOSED ){
+		MOON_PRINT( TEST, USEING_XID, "%p:closed:1", p_status );
 		close_fun( p_data );
 	}
 	return 0;
@@ -157,10 +169,14 @@ static inline int set_status_closed( int * p_status, closed_when_useing_ref0 clo
 	}while( ( tmp & STATUS_MASK ) != STATUS_CLOSED 
 			&& !__sync_bool_compare_and_swap( p_status, tmp, ( tmp & ~STATUS_MASK ) | STATUS_CLOSED ) );
 	if( ( tmp & STATUS_MASK ) != STATUS_CLOSED && tmp < USEING_REF_UNIT ){
+		MOON_PRINT( TEST, USEING_XID, "%p:closed:1", p_status );
 		close_fun( p_data );
 	}
 	return 0;
 }
+#ifdef MOON_TEST
+#undef USEING_XID
+#endif
 
 struct list_s{
 	struct list_s * next;

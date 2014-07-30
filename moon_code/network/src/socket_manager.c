@@ -1511,8 +1511,10 @@ static int session_send( common_user_data p_user_data )
 		if( p_session->aop.buf == NULL ){
 			pthread_mutex_lock( &p_session->op_mutex );
 			is_have = get_top_output_packet( p_session );
+			p_session->status |= FD_CAN_SEND;
 			p_session->status &= ~FD_SENDING;
 			p_session->status |= FD_SENDING * is_have;
+			p_session->status &= ~( FD_CAN_SEND * is_have );
 			pthread_mutex_unlock( &p_session->op_mutex );
 			if( is_have == 0 ){
 				break;

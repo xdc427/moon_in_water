@@ -40,7 +40,7 @@ DECLARE_INTERFACE( io_pipe_interface_s );
 typedef struct io_listener_interface_s{
 	int ( *send_event )( void * p_datai, void * p_pipe );
 	int ( *recv_event )( void * p_data, void * p_pipe );
-	int ( *close_event )( void * p_data, void * p_pipe );
+	void ( *close_event )( void * p_data, void * p_pipe );
 } io_listener_interface_s;
 typedef io_listener_interface_s * io_listener_interface;
 DECLARE_INTERFACE( io_listener_interface_s );

@@ -14,6 +14,7 @@ DECLARE_INTERFACE( pipe_interface_s );
 typedef struct pipe_listener_interface_s{
 	void ( * close )( void *, void * );
 	void ( * get_pipe_data_len )( void *, int * );
+	void ( * free_pipe_data )( void * );
 } pipe_listener_interface_s;
 typedef pipe_listener_interface_s * pipe_listener_interface;
 DECLARE_INTERFACE( pipe_listener_interface_s );

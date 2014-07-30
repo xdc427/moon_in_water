@@ -24,6 +24,7 @@ Export( 'env' )
 #env.Append( CCFLAGS = '-DMOON_ID=%s' % ( 'test_code' ) )
 #test_lib = SConscript( './test_code/SConstruct' )
 #env.Append( DEPEND_USER_CODE = test_lib )
+SConscript( './test_shell/SConstruct' )
 moon_lib = SConscript( './moon_code/SConstruct')
 #env.Program( 'test', [ test_lib ] )
 

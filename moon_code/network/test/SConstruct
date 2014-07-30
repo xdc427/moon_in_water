@@ -5,3 +5,15 @@ env.Program( 'pthread_pool_test.c' )
 
 env.Program( 'timer_test.c' )
 
+env.Move_head( 'pipe_seq.sh', '#./test_shell/pipe_seq.sh' )
+env.Move_head( 'socket_pfm.sh', '../test/socket_pfm.sh' )
+env.Move_head( 'socket_compare.sh', '../test/socket_compare.sh' )
+env.Move_head( 'socket_all.sh', '../test/socket_all.sh' )
+env.Move_head( 'socket_seq.sh', '../test/socket_seq.sh' )
+env.Move_head( '#./test_shell/socket_seq.sh', 'socket_seq.sh' )
+env.Move_head( 'compare', '#./test_shell/compare' )
+env.Move_head( 'count.sh', '#./test_shell/count.sh' )
+env.Move_head( 'diff.sh', '#./test_shell/diff.sh' )
+env.Program( 'socket_test.c' )
+env.Program( 'epoll.c' )
+

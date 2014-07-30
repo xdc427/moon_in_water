@@ -8,5 +8,6 @@ env.Program( 'convert_test.c' )
 env.Program( [ 'interface_main.c', 'interface_test1.c' ] )
 #测试moon_pipe
 env.Program( 'pipe_test.c' )
-env.Move_head( 'pipe.sh', '../test/pipe.sh' )
+env.Move_head( 'pipe_seq.sh', '../test/pipe_seq.sh' )
+env.Move_head( '#./test_shell/pipe_seq.sh', 'pipe_seq.sh' )
 

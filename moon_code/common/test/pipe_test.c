@@ -255,7 +255,7 @@ static void test_func2()
 	MOON_PRINT( TEST, NULL, "init done" );
 	p_pipe_i->init_done( p_data[ 1 ], 0 );
 	//add close
-	//sleep( 1 );
+	usleep( 1 );
 	p_pipe_i->close( p_data[ 0 ] );
 
 	task.user_data[ 0 ].ptr = p_test[ 1 ];
