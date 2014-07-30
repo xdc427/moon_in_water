@@ -1,0 +1,11 @@
+$1 == "moon_pipe" && $3 == "pipe_test"
+5:pipe_free == 1
+pipe_new:6:0:1
+mutex_ref:6:0:1
+pipe_init_done:6:0:pipe_new == 1
+pipe_get_ref:6:0:pipe_init_done == 1
+del_mutex:6:0:mutex_ref == 0 && pipe_init_done == 1
+useing:6:0:1
+pipe_ref:6:1:1
+pipe_closed:6:0:useing == 0
+pipe_free:6:0:pipe_closed == 1 && pipe_ref == 0

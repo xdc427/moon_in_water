@@ -1,0 +1,5 @@
+( $1 == "common_socket" && $3 == "socket_seq" ) || ( $1 == "moon_common" && $3 == "common_useing" )
+5:free == 1
+useing:6:0:1
+closed:6:0:useing == 0
+free:6:0:closed == 1
