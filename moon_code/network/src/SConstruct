@@ -17,5 +17,9 @@ env.Move_head( '#./moon_code/include_%s/common_socket.h' % ( env['MOON_TARGET'] 
 obj = env.Object( 'common_socket_%s' % ( env['MOON_TARGET'] ), 'common_socket.c' )
 objs.append( obj )
 
+env.Move_head( '#./moon_code/include_%s/moon_dns.h' % ( env['MOON_TARGET'] ), [ 'moon_dns.h' ] )
+obj = env.Object( 'moon_dns_%s' % ( env['MOON_TARGET'] ), 'moon_dns.c' )
+objs.append( obj )
+
 Return( 'objs' )
 

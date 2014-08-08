@@ -2,6 +2,7 @@
 #include<unistd.h>
 #include<pthread.h>
 #include<stdlib.h>
+#include<string.h>
 #include<time.h>
 #include<fcntl.h>
 #include<errno.h>
@@ -12,7 +13,6 @@
 #include<netinet/in.h>
 #include<arpa/inet.h>
 #include<sys/types.h>
-#include<regex.h>
 #include"moon_debug.h"
 #include"moon_pipe.h"
 #include"common_socket.h"
@@ -319,7 +319,7 @@ static int new_socket( void * p_data, void * p_pipe, const char * ip, const char
 		MOON_PRINT_MAN( ERROR, "get addr info error!" );
 		goto addr_error;
 	}
-	*( ( struct sockaddr *)&p_private->addr ) = *p_results->ai_addr;
+	memcpy( &p_private->addr, p_results->ai_addr, p_results->ai_addrlen );
 	new_fd = socket( p_results->ai_family, p_results->ai_socktype, p_results->ai_protocol );
 	if( __builtin_expect( new_fd < 0, 0 ) ){
 		MOON_PRINT_MAN( ERROR, "new sockert error" );
@@ -406,7 +406,7 @@ static int new_listen_socket( void * p_data, void * p_pipe, const char * port )
 		MOON_PRINT_MAN( ERROR, "get addr info error!" );
 		goto addr_error;
 	}
-	*( ( struct sockaddr *)&p_private->addr ) = *p_results->ai_addr;
+	memcpy( &p_private->addr, p_results->ai_addr, p_results->ai_addrlen );
 	new_fd = socket( p_results->ai_family, p_results->ai_socktype, p_results->ai_protocol );
 	if( __builtin_expect( new_fd < 0, 0 ) ){
 		MOON_PRINT_MAN( ERROR, "new sockert error" );
@@ -719,48 +719,5 @@ static void * listen_task( void * arg )
 		MOON_PRINT( TEST, NULL, "epoll_pfm_end" );
 	}
 	return NULL;
-}
-
-//
-static char * url_regex_string = "^((\\w+)://)?(((\\w+\\.)+\\w+)|(\\[([0-9a-fA-F:.]+)\\]))(:([1-9][0-9]{0,4}))?(/.*)?$";
-static regex_t url_regex;
-static char * url_elem[ ] = { "", "", "scheame", "", "host_domain", "", "", "host_ipv6", "", "port", "path" };
-
-#define SCHEAME_INDEX 2
-#define HOST_DOMAIN_INDEX 4
-#define HOST_IPV6_INDEX 7
-#define PORT_INDEX 9
-#define PATH_INDEX 10
-
-static char * ipv4_regex_string = "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[09][0-9]|[1-9][0-9]|[0-9])$";
-static regex_t ipv4_regex;
-
-static char * ipv6_regex_string = "^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:)))(%.+)?$";
-static regex_t ipv6_regex;
-
-static int regex_init( )
-{
-	int ret;
-	char error_buf[ 128 ];
-
-	if( ( ret = regcomp( &url_regex, url_regex_string, REG_EXTENDED ) ) != 0 ){
-		regerror( ret, &url_regex, error_buf, sizeof( error_buf ) );
-		MOON_PRINT_MAN( ERROR, "url regex compile error:%s", error_buf );
-		return -1;
-	}
-	if( ( ret = regcomp( &ipv4_regex, ipv4_regex_string, REG_EXTENDED ) ) != 0 ){
-		regerror( ret, &ipv4_regex, error_buf, sizeof( error_buf ) );
-		MOON_PRINT_MAN( ERROR, "ipv4 regex compile error:%s", error_buf );
-		regfree( &url_regex );
-		return -1;
-	}
-	if( ( ret = regcomp( &ipv6_regex, ipv6_regex_string, REG_EXTENDED ) ) != 0 ){
-		regerror( ret, &ipv6_regex, error_buf, sizeof( error_buf ) );
-		MOON_PRINT_MAN( ERROR, "ipv6 regex compile error:%s", error_buf );
-		regfree( &url_regex );
-		regfree( &ipv4_regex );
-		return -1;
-	}
-	return 0;
 }
 

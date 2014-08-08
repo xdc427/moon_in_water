@@ -271,16 +271,15 @@ static inline void * dlist_insert( void * p_data_head, void * p_data )
 {
 	double_list p_dlist, p_dlist_next;
 	
-	if( p_data_head == NULL ){
-		return p_data;
-	}
-	p_dlist_next = data_to_list( p_data_head );
-	p_dlist = data_to_list( p_data );
-	p_dlist->next = p_dlist_next;
-	p_dlist->prev = p_dlist_next->prev;
-	p_dlist_next->prev = p_dlist;
-	if( p_dlist->prev != NULL ){
-		p_dlist->prev->next = p_dlist;
+	if( p_data_head != NULL ){
+		p_dlist_next = data_to_list( p_data_head );
+		p_dlist = data_to_list( p_data );
+		p_dlist->next = p_dlist_next;
+		if( p_dlist_next->prev != NULL ){
+			p_dlist->prev = p_dlist_next->prev;
+			p_dlist_next->prev->next = p_dlist;
+		}
+		p_dlist_next->prev = p_dlist;
 	}
 	return p_data;
 }
@@ -290,16 +289,15 @@ static inline void * dlist_append( void * p_data_head, void * p_data )
 {
 	double_list p_dlist, p_dlist_prev;
 
-	if( p_data_head == NULL ){
-		return p_data;
-	}
-	p_dlist_prev = data_to_list( p_data_head );
-	p_dlist = data_to_list( p_data );
-	p_dlist->prev = p_dlist_prev;
-	p_dlist->next = p_dlist_prev->next;
-	p_dlist_prev->next = p_dlist;
-	if( p_dlist->next != NULL ){
-		p_dlist->next->prev = p_dlist;
+	if( p_data_head != NULL ){
+		p_dlist_prev = data_to_list( p_data_head );
+		p_dlist = data_to_list( p_data );
+		p_dlist->prev = p_dlist_prev;
+		if( p_dlist_prev->next != NULL ){
+			p_dlist->next = p_dlist_prev->next;
+			p_dlist_prev->next->prev = p_dlist;
+		}
+		p_dlist_prev->next = p_dlist;
 	}
 	return p_data;
 }
@@ -308,17 +306,19 @@ static inline void * dlist_append( void * p_data_head, void * p_data )
 static inline void * dlist_del( void * p_data )
 {
 	double_list p_dlist;
+	void * p_next_data;
 
 	p_dlist = data_to_list( p_data );
 	if( p_dlist->prev != NULL ){
 		p_dlist->prev->next = p_dlist->next;
-		p_dlist->prev = NULL;
 	}
 	if( p_dlist->next != NULL ){
 		p_dlist->next->prev = p_dlist->prev;
-		p_dlist->next = NULL;
 	}
-	return list_to_data( p_dlist->next );
+	p_next_data = list_to_data( p_dlist->next );
+	p_dlist->prev = NULL;
+	p_dlist->next = NULL;
+	return p_next_data;
 }
 
 //切断p_data与前面元素的链接，返回p_data
@@ -411,7 +411,7 @@ static inline void * hash_malloc( int data_len )
 	return NULL;
 }
 
-static inline void * hash_search2( double_list table, char * key, void * p_data )
+static inline void * hash_search2( double_list table, const char * key, void * p_data )
 {
 	hash_key p_key;
 	unsigned long index;
@@ -432,7 +432,7 @@ static inline void * hash_search2( double_list table, char * key, void * p_data 
 	return NULL;
 }
 
-static inline void * hash_search( double_list table, char * key, int data_len )
+static inline void * hash_search( double_list table, const char * key, int data_len )
 {
 	void * p_ret;
 	void * p_data = NULL;
@@ -447,7 +447,7 @@ static inline void * hash_search( double_list table, char * key, int data_len )
 	return p_ret;
 }
 
-static inline void * hash_table_search2( hash_table p_hash_table, char * key, void * p_data )
+static inline void * hash_table_search2( hash_table p_hash_table, const char * key, void * p_data )
 {
 	void * ptr;
 	
@@ -458,7 +458,7 @@ static inline void * hash_table_search2( hash_table p_hash_table, char * key, vo
 	return ptr;
 }
 
-static inline void * hash_table_search( hash_table p_hash_table, char * key, int data_len )
+static inline void * hash_table_search( hash_table p_hash_table, const char * key, int data_len )
 {
 	void * p_ret;
 	void * p_data = NULL;
@@ -514,7 +514,7 @@ static inline void get_key_of_value( void * p_data, char * key, int len )
 	snprintf( key, len, "%s", ( ( hash_key )p_data - 1 )->key );
 }
 
-static inline void set_key_of_value( void * p_data, char * key )
+static inline void set_key_of_value( void * p_data, const char * key )
 {
 	hash_key p_key;
 

@@ -17,3 +17,6 @@ env.Move_head( 'diff.sh', '#./test_shell/diff.sh' )
 env.Program( 'socket_test.c' )
 env.Program( 'epoll.c' )
 
+env.Program( 'cares_test.c' )
+env.Program( 'dns_test.c' )
+
