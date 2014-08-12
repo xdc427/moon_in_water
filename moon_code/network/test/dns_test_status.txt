@@ -1,0 +1,9 @@
+domain_status:0:1
+domain_status:1:2
+domain_status:2:3
+domain_status:3:4
+domain_status:4:5
+domain_status:3:1
+domain_status:4:1
+domain_status:5:2
+domain_status:5:3

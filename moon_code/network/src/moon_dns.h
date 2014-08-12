@@ -4,8 +4,8 @@
 #include"moon_interface.h"
 
 enum{
-	DNS_FLAG_CLEAR_CACHE,
-	DNS_FLAG_DONT_USE_CHACHE
+	DNS_FLAG_CLEAR_CACHE = 0x1,
+	DNS_FLAG_DONT_USE_CHACHE = 0x2
 };
 
 typedef struct addr_elem_s{

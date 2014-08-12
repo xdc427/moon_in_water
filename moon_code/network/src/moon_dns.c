@@ -353,39 +353,45 @@ static int moon_getaddrinfo( void * p_data, void * p_pipe, const char * domain, 
 					, sizeof( double_list_s ) + sizeof( dns_domain_s ) + sizeof( list_s ) ) );
 		if( p_domain != NULL ){
 			init_fail = 0;
+#ifdef MOON_TEST
+			int prev_status = p_domain->status;
+#endif
 			switch( p_domain->status ){
-				case 0:
-					p_domain->p_dns = p_dns;
-					p_domain->status++;
-					is_new =  1;
-				case DOMAIN_QUERYING:
-				case DOMAIN_QUERY1:
+			case 0:
+				MOON_PRINT( TEST, NULL, "%p:domain_mem:1", p_domain );
+				p_domain->p_dns = p_dns;
+				p_domain->status++;
+				is_new =  1;
+			case DOMAIN_QUERYING:
+			case DOMAIN_QUERY1:
+				add_query = 1;
+				break;
+			case DOMAIN_QUERY2:
+			case DOMAIN_NEW_QUERYING:
+			case DOMAIN_NEW_QUERY1:
+				if( ( flags & DNS_FLAG_CLEAR_CACHE ) != 0 
+					&& ( p_tv == NULL								
+						|| compare_tv( &p_domain->p_addrs->tv, p_tv ) <= 0 ) ){
+					is_new = p_domain->status == DOMAIN_QUERY2;
+					p_domain->status = p_domain->status - DOMAIN_QUERY2 + is_new;
+					dlist_del( p_domain );
+					p_dns->domain_num--;
 					add_query = 1;
-					break;
-				case DOMAIN_QUERY2:
-				case DOMAIN_NEW_QUERYING:
-				case DOMAIN_NEW_QUERY1:
-					if( ( flags & DNS_FLAG_CLEAR_CACHE ) != 0 
-						&& ( p_tv == NULL 
+				}else if( ( flags & DNS_FLAG_DONT_USE_CHACHE ) != 0 
+					&& ( p_tv == NULL 
 							|| compare_tv( &p_domain->p_addrs->tv, p_tv ) <= 0 ) ){
-						is_new = p_domain->status == DOMAIN_QUERY2;
-						p_domain->status = p_domain->status - DOMAIN_QUERY2 + is_new;
-						dlist_del( p_domain );
-						p_dns->domain_num--;
-						add_query = 1;
-					}else if( ( flags & DNS_FLAG_DONT_USE_CHACHE ) != 0 
-							&& ( p_tv == NULL 
-								|| compare_tv( &p_domain->p_addrs->tv, p_tv ) <= 0 ) ){
-						is_new = p_domain->status == DOMAIN_QUERY2;
-						p_domain->status += is_new;
-						add_query = 1;
-					}else{
-						addrs_ref_inc( p_domain->p_addrs );
-						p_new_addrs = p_domain->p_addrs;
-					}
-				default:
-					MOON_PRINT_MAN( ERROR, "domain status error!" );
+					is_new = p_domain->status == DOMAIN_QUERY2;
+					p_domain->status += is_new;
+					add_query = 1;
+				}else{
+					addrs_ref_inc( p_domain->p_addrs );
+					p_new_addrs = p_domain->p_addrs;
+				}
+				break;
+			default:
+				MOON_PRINT_MAN( ERROR, "domain status error!" );
 			}
+			MOON_PRINT( TEST, NULL, "domain_status:%d:%d", prev_status, p_domain->status );
 			if( add_query ){
 				CALL_INTERFACE_FUNC( p_pipe, gc_interface_s, ref_inc );
 				p_domain->p_query_head = dlist_insert( p_domain->p_query_head, p_query );
@@ -496,6 +502,7 @@ static dns_addrs save_addrs( struct hostent * hostent )
 				p_elem->len = MIN( hostent->h_length, sizeof( p_elem->addr_buf ) );
 				memcpy( p_elem->addr_buf, hostent->h_addr_list[ i ], p_elem->len );
 				dlist_insert( p_addrs->p_tail, p_elem );
+				MOON_PRINT( TEST, NULL, "%p:memalloc:1", p_elem );
 			}else{
 				MOON_PRINT_MAN( ERROR, "malloc addr_elem_s error!" );
 				break;
@@ -529,6 +536,9 @@ void domain_callback( void * p_data, int status, int timeouts, struct hostent * 
 		MOON_PRINT_MAN( ERROR, "query fail:%d", status );
 	}
 	pthread_mutex_lock( &p_dns->mutex );
+#ifdef MOON_TEST
+	int prev_status = p_domain->status;
+#endif
 	switch( p_domain->status ){
 	case DOMAIN_QUERYING:
 	case DOMAIN_NEW_QUERYING:
@@ -556,9 +566,9 @@ void domain_callback( void * p_data, int status, int timeouts, struct hostent * 
 				dlist_del( p_domain_del );
 				p_dns->domain_num--;
 				if( p_domain_del->status == DOMAIN_QUERY2 ){
-					hash_del( data_to_list( p_domain ) );
+					hash_del( data_to_list( p_domain_del ) );
 				}else{
-					p_domain->status -= DOMAIN_QUERY2;
+					p_domain_del->status -= DOMAIN_QUERY2;
 					p_domain_del = NULL;
 				}
 			}
@@ -574,9 +584,11 @@ void domain_callback( void * p_data, int status, int timeouts, struct hostent * 
 	default:
 		MOON_PRINT_MAN( ERROR, "bad domain callback status:%d", p_domain->status );
 	}
+	MOON_PRINT( TEST, NULL, "domain_status:%d:%d", prev_status, p_domain->status );
 	pthread_mutex_unlock( &p_dns->mutex );
 	notice_user( p_query, p_addrs_query );
 	if( p_domain_del != NULL ){
+		MOON_PRINT( TEST, NULL, "%p:domain_mem:-1", p_domain_del );
 		addrs_ref_dec( p_domain_del->p_addrs );
 		hash_free( data_to_list( p_domain_del ) );
 	}
@@ -590,7 +602,7 @@ static void sock_state_change( void * p_data, ares_socket_t fd, int readable, in
 	struct epoll_event ev;
 	int ret;
 
-	MOON_PRINT( TEST, NULL, "state_change:%d:%d", readable, writeable );
+	MOON_PRINT( TEST, NULL, "state_change:%d:%d:%d", fd, readable, writeable );
 	p_dns = p_data;
 	ev.data.fd = fd;
 	ev.events = ( readable * EPOLLIN ) | ( writeable * EPOLLOUT );
@@ -625,8 +637,8 @@ void * dns_task( void * arg )
 	optmask = 0;
 	optmask |= ARES_OPT_TIMEOUT;
 	opts.timeout = 10;
-//	optmask |= ARES_OPT_TRIES;
-//	opts.tries = 1;
+	optmask |= ARES_OPT_TRIES;
+	opts.tries = 1;
 	optmask |= ARES_OPT_SOCK_STATE_CB;
 	opts.sock_state_cb = sock_state_change;
 	opts.sock_state_cb_data = p_dns;
@@ -681,22 +693,28 @@ void * dns_task( void * arg )
 		p_domain = dlist_next( p_dns->p_domain_head );
 		p_domain_del = NULL;
 		while( p_domain != p_dns->p_domain_tail ){
+			MOON_PRINT( TEST, NULL, "domain_point:%p", p_domain );
 			if( compare_tv( &p_domain->p_addrs->tv, &tv ) <= 0 ){
 				p_domain_tmp = p_domain;
 				p_domain = dlist_del( p_domain_tmp );
 				p_dns->domain_num--;
-				if( p_domain->status == DOMAIN_QUERY2 ){
-					hash_del( data_to_list( p_domain ) );
+#ifdef MOON_TEST
+				int prev_status = p_domain->status;
+#endif
+				if( p_domain_tmp->status == DOMAIN_QUERY2 ){
+					hash_del( data_to_list( p_domain_tmp ) );
 					p_domain_del = dlist_insert( p_domain_del, p_domain_tmp );
 				}else{
-					p_domain->status -= DOMAIN_QUERY2;
+					p_domain_tmp->status -= DOMAIN_QUERY2;
 				}
+				MOON_PRINT( TEST, NULL, "domain_status:%d:%d", prev_status, p_domain_tmp->status );
 			}else{
 				break;
 			}
 		}
 		pthread_mutex_unlock( &p_dns->mutex );
 		while( p_domain_del != NULL ){
+			MOON_PRINT( TEST, NULL, "%p:domain_mem:-1", p_domain_del );
 			p_domain_tmp = p_domain_del;
 			p_domain_del = dlist_del( p_domain_tmp );
 			addrs_ref_dec( p_domain_tmp->p_addrs );
@@ -719,6 +737,7 @@ static dns_addrs new_addrs( )
 		p_addrs->p_head = list_to_data( &p_addrs->dlist[ 0 ] );
 		p_addrs->p_tail = list_to_data( &p_addrs->dlist[ 1 ] );
 		dlist_append( p_addrs->p_head, p_addrs->p_tail );
+		MOON_PRINT( TEST, NULL, "%p:memalloc:1", p_addrs );
 	}
 	return p_addrs;
 }
@@ -793,10 +812,12 @@ static void addrs_ref_dec( void * p_data )
 		if( ref_num == 0 ){
 			p_elem = dlist_next( p_addrs->p_head );
 			while( p_elem != p_addrs->p_tail ){
+				MOON_PRINT( TEST, NULL, "%p:memalloc:-1", p_elem );
 				p_elem_tmp = p_elem;
 				p_elem = dlist_del( p_elem_tmp );
 				dlist_free( p_elem_tmp );
 			}
+			MOON_PRINT( TEST, NULL, "%p:memalloc:-1", p_addrs );
 			free( GET_INTERFACE_START_POINT( p_addrs ) );	
 		}
 	}

@@ -19,4 +19,8 @@ env.Program( 'epoll.c' )
 
 env.Program( 'cares_test.c' )
 env.Program( 'dns_test.c' )
+env.Move_head( 'dns_test_cmd.txt', '../test/dns_test_cmd.txt' )
+env.Move_head( 'dns_test_status.sh', '../test/dns_test_status.sh' )
+env.Move_head( 'dns_mem.sh', '../test/dns_mem.sh' )
+env.Move_head( 'dns_test_status.txt', '../test/dns_test_status.txt' )
 

@@ -3,8 +3,8 @@ import os
 user_dirs = [ 'user_code/x_shadow1', 'user_code/x_shadow2' ]
 user_libs = []
 
-test_env = Environment( ENV = os.environ, CCFLAGS=[ '-DLEVEL_NORMAL', '-DLEVEL_TEST', '-g', '-Wall' ], LIBS=[ 'pthread', 'crypto', 'z', 'cares' ], MOON_TARGET='test', CPPPATH='#./moon_code/include_test', ANALYSE_DIRS=[ 'test_code' ] )
-release_env = Environment( ENV = os.environ, CCFLAGS='-DLEVEL_NORMAL', LIBS=[ 'pthread', 'crypto', 'z', 'cares' ], MOON_TARGET='release', CPPPATH='#./moon_code/include_release', ANALYSE_DIRS=user_dirs )
+test_env = Environment( ENV = os.environ, CCFLAGS=[ '-DLEVEL_NORMAL', '-DLEVEL_TEST', '-g', '-Wall' ], LIBS=[ 'pthread', 'crypto', 'z', 'cares', 'json-c' ], MOON_TARGET='test', CPPPATH='#./moon_code/include_test', ANALYSE_DIRS=[ 'test_code' ] )
+release_env = Environment( ENV = os.environ, CCFLAGS='-DLEVEL_NORMAL', LIBS=[ 'pthread', 'crypto', 'z', 'cares', 'json-c'  ], MOON_TARGET='release', CPPPATH='#./moon_code/include_release', ANALYSE_DIRS=user_dirs )
 
 def move_head( source, target, env, for_signature):
 	cmd = []

@@ -1,0 +1,16 @@
+[
+{ "parse":"google.com" },
+{ "usleep":1000000 },
+{ "parse":"google.com", "flags":1 },
+{ "usleep":1000000 },
+{ "parse":"google.com", "flags":2 },
+{ "usleep":1000000 },
+{ "parse":"google.com", "flags":2 },
+{ "usleep":100 },
+{ "parse":"google.com", "flags":1 },
+{ "usleep":100000 },
+{ "parse":"google.com", "flags":2 },
+{ "usleep":25000 },
+{ "parse":"google.com", "flags":1 }
+]
+
