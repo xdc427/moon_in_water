@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<stdint.h>
 #include<pthread.h>
 #include"moon_packet2.h"
 #include"moon_common.h"
@@ -12,7 +13,7 @@
 #define get_buf_desc( p_head, index ) ( ( buf_desc )( p_head + 1 ) + index )
 
 typedef struct{
-	int ref_num;//use case sync
+	uint32_t ref_num;//use cas sync
 } packet_buf_s;
 typedef packet_buf_s * packet_buf;
 
@@ -33,22 +34,21 @@ void * packet_buf_malloc( int size )
 {
 	packet_buf p_buf;
 
-	if( size <= 0 ){
-		return NULL;
+	if( size > 0 ){
+		p_buf = malloc( sizeof( *p_buf ) + size );
+		if( p_buf != NULL ){
+			p_buf->ref_num = 1;
+			return p_buf + 1;
+		}
 	}
-	p_buf = malloc( sizeof( *p_buf ) + size );
-	if( p_buf != NULL ){
-		p_buf->ref_num = 1;
-	}
-	return p_buf->buf;
+	return NULL;
 }
 
 void packet_buf_free( void * buf )
 {
-	if( buf == NULL ){
-		return;
+	if( buf != NULL ){
+		free( ( packet_buf )buf - 1 );
 	}
-	free( ( packet_buf )buf - 1 );
 }
 
 static int _add_buf_to_packet( buf_head * pp_head, buf_desc p_desc, int num, int len )

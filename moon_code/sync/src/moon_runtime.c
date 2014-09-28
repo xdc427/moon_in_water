@@ -2,7 +2,7 @@
 #include<stdlib.h>
 #include<pthread.h>
 #include<string.h>
-#include"zlib.h"
+#include<zlib.h>
 #include"moon_runtime.h"
 #include"moon_debug.h"
 #include"shadow_struct.h"

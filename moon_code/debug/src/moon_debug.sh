@@ -8,6 +8,7 @@ BEGIN{
 	print "#ifndef MODENAME"
 	print "#define MODENAME \"\""
 	print "#endif"
+	print "#include<sys/time.h>"
 	print ""
 }
 

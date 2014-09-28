@@ -1,7 +1,7 @@
 #!/bin/bash
 while read line
 do
-	grep "$line" $1
+	grep "$line" $1 > /dev/null
 	if [ "$?" != "0" ]
 	then
 		echo "don't find: $line"

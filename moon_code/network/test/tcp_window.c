@@ -121,13 +121,7 @@ static int socket_ready( void * p_data, void * p_pipe, void * p_new_pipe )
 	if( p_new_type->is_accept ){
 		p_new_type->socket_id = __sync_fetch_and_add( &socket_id, 1 );
 	}
-	if( ( p_new_type->socket_id % 100 ) == 0 ){
-		p_new_type->left_len = ( rand() % 512 * 1024 ) + 1024 * 1024;
-	}else if( ( p_new_type->socket_id % 50 ) == 0 ){
-		p_new_type->left_len = ( rand() % 100 * 1024 ) + 100 * 1024;
-	}else{
-		p_new_type->left_len = ( rand() % 1024 ) + 1;
-	}
+	p_new_type->left_len = 1024 * 1024;
 	p_new_type->total_len = p_new_type->left_len;
 	pthread_mutex_init( &p_new_type->mutex, NULL );
 	p_pipe_i = FIND_INTERFACE( p_new_pipe, pipe_interface_s );
@@ -429,21 +423,19 @@ void main()
 	CALL_INTERFACE_FUNC( p_type, pipe_interface_s, set_point_ref, &order_hub + 1 );
 	p_spool_i->new_listen_socket( p_spool, p_pipe[ 1 ], "12345" );
 
-	for( i = 0; i < 5000; i++ ){
-		ret = pipe_new( p_pipe, sizeof( socket_type_s ), len, 1 );
-		if( ret >= 0 ){
-			p_type = p_pipe[ 0 ];
-			p_type->is_accept = 0;
-			p_type->socket_id = __sync_fetch_and_add( &socket_id, 1 );
-			pthread_mutex_init( &p_type->mutex, NULL );
-			CALL_INTERFACE_FUNC( p_type, pipe_interface_s, set_point_ref, &order_hub + 1 );
-			p_spool_i->new_socket( p_spool, p_pipe[ 1 ], "127.0.0.1", "12345" );
-			MOON_PRINT( TEST, NULL, "connect_socket:%d", p_type->socket_id );
-		}else{
-			MOON_PRINT( TEST, NULL, "client_new_error" );
-		}
+	ret = pipe_new( p_pipe, sizeof( socket_type_s ), len, 1 );
+	if( ret >= 0 ){
+		p_type = p_pipe[ 0 ];
+		p_type->is_accept = 0;
+		p_type->socket_id = __sync_fetch_and_add( &socket_id, 1 );
+		pthread_mutex_init( &p_type->mutex, NULL );
+		CALL_INTERFACE_FUNC( p_type, pipe_interface_s, set_point_ref, &order_hub + 1 );
+		p_spool_i->new_socket( p_spool, p_pipe[ 1 ], "127.0.0.1", "12345" );
+		MOON_PRINT( TEST, NULL, "connect_socket:%d", p_type->socket_id );
+	}else{
+		MOON_PRINT( TEST, NULL, "client_new_error" );
 	}
-	sleep( 150 );
+	sleep( 20 );
 ///	while( 1 );
 }
 

@@ -56,7 +56,7 @@ static void query_success( void * p_data, void * p_pipe, void * p_addrs )
 			p_elem = p_addrs_i->get_next( p_addrs, p_elem );
 		}
 		CALL_INTERFACE_FUNC( p_test, pipe_interface_s, close );
-		CALL_INTERFACE_FUNC( p_test, gc_interface_s, ref_dec );
+//		CALL_INTERFACE_FUNC( p_test, gc_interface_s, ref_dec );
 	}
 }
 
@@ -66,6 +66,7 @@ static int query_cancel( test_private p_test )
 	
 	tmp = __sync_fetch_and_add( &p_test->status, 1 );
 	if( tmp == 0 ){
+		printf( "domain cancel: %s\n", p_test->domain );
 		CALL_INTERFACE_FUNC( p_test, pipe_interface_s, close );
 //		CALL_INTERFACE_FUNC( p_test, gc_interface_s, ref_dec );
 		return 0;
@@ -176,7 +177,11 @@ int main( int argc, char * argv[] )
 			j++;
 		}else if( json_object_object_get_ex( p_obj, "cancel", &p_tmp ) == TRUE ){
 			n = json_object_get_int( p_tmp );
-			query_cancel( private_table[ n ] );
+			if( private_table[ n ] != NULL ){
+				query_cancel( private_table[ n ] );
+				CALL_INTERFACE_FUNC( private_table[ n ], gc_interface_s, ref_dec );
+				private_table[ n ] = NULL;
+			}
 		}else if( json_object_object_get_ex( p_obj, "usleep", &p_tmp ) == TRUE ){
 			sleep_us = json_object_get_int( p_tmp );
 			usleep( sleep_us );
@@ -185,7 +190,14 @@ int main( int argc, char * argv[] )
 		}
 	}
 	json_object_put( p_dns_obj );
-	sleep( 30 );
+	sleep( 20 );
+	for( i = 0; i < j; i++ ){
+		if( private_table[ i ] != NULL ){
+			query_cancel( private_table[ i ] );
+			CALL_INTERFACE_FUNC( private_table[ i ], gc_interface_s, ref_dec );
+			private_table[ i ] = NULL;
+		}
+	}
 	return 0;
 }
 

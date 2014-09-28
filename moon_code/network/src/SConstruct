@@ -21,5 +21,9 @@ env.Move_head( '#./moon_code/include_%s/moon_dns.h' % ( env['MOON_TARGET'] ), [ 
 obj = env.Object( 'moon_dns_%s' % ( env['MOON_TARGET'] ), 'moon_dns.c' )
 objs.append( obj )
 
+env.Move_head( '#./moon_code/include_%s/moon_thread_info.h' % ( env['MOON_TARGET'] ), [ 'moon_thread_info.h' ] )
+obj = env.Object( 'moon_thread_info_%s' % ( env['MOON_TARGET'] ), 'moon_thread_info.c' )
+objs.append( obj )
+
 Return( 'objs' )
 

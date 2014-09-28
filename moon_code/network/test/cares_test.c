@@ -10,7 +10,7 @@ void dns_callback ( void* arg, int status, int timeouts, struct hostent* host )
 	int i;
 
 	if( status == ARES_SUCCESS ){
-		for( i = 0; i < host->h_addr_list[ i ] != NULL; i++ ){
+		for( i = 0; host->h_addr_list[ i ] != NULL; i++ ){
 			inet_ntop( host->h_addrtype, host->h_addr_list[ i ], ip, sizeof( ip ) );
 			printf( "%s	%d\n", ip, host->h_length );
 		}

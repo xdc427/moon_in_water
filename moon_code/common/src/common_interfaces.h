@@ -38,8 +38,8 @@ typedef io_pipe_interface_s * io_pipe_interface;
 DECLARE_INTERFACE( io_pipe_interface_s );
 
 typedef struct io_listener_interface_s{
-	int ( *send_event )( void * p_datai, void * p_pipe );
-	int ( *recv_event )( void * p_data, void * p_pipe );
+	int ( *send_event )( void * p_data, void * p_pipe, common_user_data_u user_data );
+	int ( *recv_event )( void * p_data, void * p_pipe, common_user_data_u user_data );
 	void ( *close_event )( void * p_data, void * p_pipe );
 } io_listener_interface_s;
 typedef io_listener_interface_s * io_listener_interface;

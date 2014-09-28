@@ -71,6 +71,7 @@
 
 #define ARRAY_LEN( array ) ( sizeof( array ) / sizeof( ( array )[ 0 ]) )
 #define POINT_OFFSET( ptr1, ptr2 ) ( ( char * )( ptr1 ) - ( char * )( ptr2 ) )
+#define ROUND_UP( num, align ) ( ( ( num ) + ( ( align ) - 1 ) ) & ( ~( typeof( num ) )( ( align ) - 1 ) ) )
 #define STRLEN( str ) ( sizeof( str ) - 1 )
 #ifdef LEVEL_TEST
 #define is_little() 1
@@ -184,6 +185,7 @@ struct list_s{
 typedef struct list_s list_s;
 typedef struct list_s * list;
 
+#define DLIST_NODE_APPEND_LEN ( sizeof( double_list_s ) )
 struct double_list_s{
 	struct double_list_s * prev;
 	struct double_list_s * next;
@@ -191,11 +193,12 @@ struct double_list_s{
 typedef struct double_list_s double_list_s;
 typedef struct double_list_s * double_list;
 
+#define AVL_NODE_APPEND_LEN ( sizeof( avl_tree_s ) )
 struct avl_tree_s{
+	int balance; //0为平衡，-1左边比右边大1，1右边比左边大1
 	struct avl_tree_s * left;
 	struct avl_tree_s * right;
 	struct avl_tree_s * parent;
-	int balance; //0为平衡，-1左边比右边大1，1右边比左边大1
 };
 typedef struct avl_tree_s avl_tree_s;
 typedef struct avl_tree_s * avl_tree;
@@ -222,14 +225,22 @@ typedef union{
 	int i_num;
 	unsigned long long ull_num;
 	double d_num;
+	int32_t i32[ 2 ];
+	uint32_t u32[ 2 ];
+	int64_t i64;
+	uint64_t u64;
 } common_user_data_u;
 typedef common_user_data_u * common_user_data;
 
 //ret: 0 continue; <0 error quit; >0 normal quit
 typedef int( *traver_func )( void *, common_user_data_u );
+//ret: p1 > p2: >0; p1 == p2: =0; p1 < p2: <0
+typedef int( *cmp_func )( void * , common_user_data_u );
+
 #define HASH_NUM 67
 #define HASH_BASE 61
 
+#define HASH_NODE_APPEND_LEN (  DLIST_NODE_APPEND_LEN + sizeof( hash_key_s ) )
 typedef struct hash_table_s{
 	double_list_s table[ HASH_NUM ];
 	int num;
@@ -245,12 +256,12 @@ typedef struct hash_key_s * hash_key;
 //dlist
 static inline double_list data_to_list( void * p_data )
 {
-	return p_data == NULL? NULL: ( double_list )p_data - 1;
+	return p_data != NULL? ( double_list )p_data - 1 : NULL;
 }
 
 static inline void * list_to_data( double_list p_dlist )
 {
-	return p_dlist == NULL? NULL: ( void * )( p_dlist + 1 );
+	return p_dlist != NULL? ( void * )( p_dlist + 1 ) : NULL;
 }
 
 static inline void * dlist_malloc( int len )
@@ -591,13 +602,30 @@ static inline void sprint_binary( char * buf, unsigned char * b_array, int len )
 }
 
 //avl interface
-int avl_traver_first( avl_tree avl, int ( *func )( addr_pair, void * ), void * para );
+int avl_traver_preorder( avl_tree avl, cmp_func func, common_user_data_u user_data);
+int avl_traver_midorder( avl_tree avl, cmp_func func, common_user_data_u user_data);
+int avl_traver_lastorder( avl_tree avl, cmp_func func, common_user_data_u user_data);
 void avl_print( avl_tree avl );
 void avl_free( avl_tree * pavl );
 addr_pair avl_search( avl_tree avl, unsigned long long addr );
 addr_pair avl_add( avl_tree * pavl, unsigned long long addr );
 addr_pair_s avl_del( avl_tree * pavl, unsigned long long addr );
-addr_pair avl_leftest_node( avl_tree avl );
+void * avl_leftest_node( avl_tree avl );
+void * avl_rightest_node( avl_tree acl );
+void * avl_search2( avl_tree avl, cmp_func func, common_user_data_u user_data );
+void * avl_del2( avl_tree * pavl, void * p_data );
+void * avl_add2( avl_tree * pavl, void * p_data, cmp_func cmp, common_user_data_u user_data );
+void avl_replace2( avl_tree * pavl, void * p_new, void * p_replaced );
+
+static inline void * avl_to_data( avl_tree p_avl )
+{
+	return p_avl != NULL ? p_avl + 1 : NULL; 
+}
+
+static inline avl_tree data_to_avl( void * p_data )
+{
+	return p_data != NULL ? ( avl_tree )p_data - 1 : NULL; 
+}
 
 //max_min heap
 typedef struct max_min_heap_s * max_min_heap;

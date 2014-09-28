@@ -17,6 +17,7 @@
 #include"moon_pipe.h"
 #include"moon_dns.h"
 #include"common_interfaces.h"
+#include"moon_thread_info.h"
 
 #undef MODENAME
 #define MODENAME "moon_dns"
@@ -437,6 +438,7 @@ static void cancel_query( void * p_data, void * p_pipe )
 		p_dns = p_data;
 		p_query = list_to_data( p_pipe );
 		if( p_query->status != 0 ){
+			MOON_PRINT( TEST, NULL, "query_already_cancel" );
 			return;
 		}
 		pthread_mutex_lock( &p_dns->mutex );
@@ -450,7 +452,10 @@ static void cancel_query( void * p_data, void * p_pipe )
 		}
 		pthread_mutex_unlock( &p_dns->mutex );
 		if( is_del ){
+			MOON_PRINT( TEST, NULL, "query_cancel" );
 			CALL_INTERFACE_FUNC( p_pipe, gc_interface_s, ref_dec );
+		}else{
+			MOON_PRINT( TEST, NULL, "query_try_cancel" );
 		}
 	}
 }
@@ -632,7 +637,11 @@ void * dns_task( void * arg )
 	int processed;
 	struct epoll_event events[ 5 ];
 	dns_domain p_domain, p_domain_del, p_domain_tmp;
+	thread_info p_info;
 
+	if( ( p_info = init_thread() ) != NULL ){
+		p_info->level = THREAD_LEVEL1;
+	}
 	p_dns = arg;
 	optmask = 0;
 	optmask |= ARES_OPT_TIMEOUT;

@@ -2,11 +2,14 @@
 #define _MOON_PACKET2_H_
 
 typedef struct{
-	unsigned char * buf;//packet_buf + 1
+	char * buf;//packet_buf + 1
 	int offset;
 	int len;
 } buf_desc_s;
 typedef buf_desc_s * buf_desc;
+
+struct buf_head_s;
+typedef struct buf_head_s buf_head_s;
 typedef buf_head_s * buf_head;
 
 void * packet_buf_malloc( int size );

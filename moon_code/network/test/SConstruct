@@ -23,4 +23,10 @@ env.Move_head( 'dns_test_cmd.txt', '../test/dns_test_cmd.txt' )
 env.Move_head( 'dns_test_status.sh', '../test/dns_test_status.sh' )
 env.Move_head( 'dns_mem.sh', '../test/dns_mem.sh' )
 env.Move_head( 'dns_test_status.txt', '../test/dns_test_status.txt' )
+env.Move_head( 'dns_cmd_create.sh', '../test/dns_cmd_create.sh' )
+env.Move_head( 'dns_all.sh', '../test/dns_all.sh' )
+
+env.Program( 'thread_info_test.c' )
+
+env.Program( 'tcp_window.c' )
 

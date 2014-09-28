@@ -17,6 +17,7 @@
 #include"moon_pipe.h"
 #include"common_socket.h"
 #include"common_interfaces.h"
+#include"moon_thread_info.h"
 
 #ifdef MODENAME
 #undef MODENAME
@@ -194,12 +195,12 @@ static void _socket_close( void * p_data )
 	switch( p_private->fd_cat ){
 	case JOIN_SOCKET:
 	case UNJOIN_SOCKET:
-		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
-		if( ret >= 0 ){
-			CALL_INTERFACE_FUNC( p_point, io_listener_interface_s, close_event, p_point_data );
-			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
-			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
-		}
+//		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
+//		if( ret >= 0 ){
+//			CALL_INTERFACE_FUNC( p_point, io_listener_interface_s, close_event, p_point_data );
+//			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
+//			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
+//		}
 	case LISTEN_SOCKET:
 	case CONNECT_SOCKET:
 		if( p_private->fd_cat != UNJOIN_SOCKET ){
@@ -457,13 +458,14 @@ static void _socket_can_read( socket_private p_private )
 	int ret;
 	socklen_t addr_len;
 	struct sockaddr_storage addr;
+	common_user_data_u user_data;
 
 	switch( p_private->fd_cat ){
 	case JOIN_SOCKET:
 		MOON_PRINT( TEST, NULL, "read_pfm_before" );
 		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
 		if( ret >= 0 ){
-			p_private->p_io_listener_i->recv_event( p_point, p_point_data );
+			p_private->p_io_listener_i->recv_event( p_point, p_point_data, user_data );
 			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
 			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
 		}else{
@@ -511,13 +513,14 @@ static void _socket_can_write( socket_private p_private )
 	int ret, result;
 	socklen_t result_len;
 	struct epoll_event ev;
+	common_user_data_u user_data;
 
 	switch( p_private->fd_cat ){
 	case JOIN_SOCKET:
 		MOON_PRINT( TEST, NULL, "write_pfm_before" );
 		ret = p_private->p_pipe_i->get_other_point_ref( p_private, &p_point, &p_point_data );
 		if( ret >= 0 ){
-			p_private->p_io_listener_i->send_event( p_point, p_point_data );
+			p_private->p_io_listener_i->send_event( p_point, p_point_data, user_data );
 			CALL_INTERFACE_FUNC( p_point, gc_interface_s, ref_dec );
 			CALL_INTERFACE_FUNC( p_point_data, gc_interface_s, ref_dec );
 		}else{
@@ -680,7 +683,11 @@ static void * listen_task( void * arg )
 	struct epoll_event events[ MAX_EVENTS ];
 	socket_private p_private;
 	list p_list;
-
+	thread_info p_info;
+	
+	if( ( p_info = init_thread() ) != NULL ){
+		p_info->level = THREAD_LEVEL0;
+	}
 	p_spool = ( socket_pool )arg;
 	for( ; ; ){
 		nfds = epoll_wait( p_spool->epoll_fd, events, MAX_EVENTS, 100 );

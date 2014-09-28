@@ -2,6 +2,11 @@
 
 Import( 'env' )
 
+#test avl_tree
+env.Program( 'avl_test.c' )
+env.Move_head( 'avl_cmd.txt', '../test/avl_cmd.txt' )
+env.Move_head( 'avl_result.txt', '../test/avl_result.txt' )
+env.Move_head( 'avl.sh', '../test/avl.sh' )
 #测试大小端转化
 env.Program( 'convert_test.c' )
 #测试moon_interface

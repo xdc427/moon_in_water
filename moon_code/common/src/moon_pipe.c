@@ -22,9 +22,10 @@ enum{
 	PIPE_STATUS_READY = 0x1,
 	PIPE_POINT0_CLOSED = 0x2,
 	PIPE_POINT1_CLOSED = 0x4,
+	PIPE_ALLOC = 0x8,
 	PIPE_CLOSED_MASK = PIPE_POINT0_CLOSED | PIPE_POINT1_CLOSED,
-	PIPE_STATUS_MASK = 0x7,
-	PIPE_USEING_REF_UNIT = 0x8
+	PIPE_STATUS_MASK = 0xf,
+	PIPE_USEING_REF_UNIT = 0x10
 }timer_status_e;
 
 enum{
@@ -126,7 +127,16 @@ static int pipe_useing_ref_dec( void * p_data )
 	return 0;
 }
 
-int pipe_new( void ** ptr, int len1, int len2, int is_two_way )
+int calculate_pipe_len( int len1, int len2 )
+{
+	int i_len;
+
+	i_len = CACULATE_INTERFACE_ENTITY_LEN( 0, 0 );
+	return sizeof( moon_pipe_s ) 
+		+ ( sizeof( pipe_point_data_s ) + i_len ) * 2 + len1 + len2;
+}
+
+int pipe_new2( void ** ptr, int len1, int len2, int is_two_way, void * p_buf )
 {
 	int i_len, i;
 	moon_pipe p_pipe;
@@ -134,22 +144,15 @@ int pipe_new( void ** ptr, int len1, int len2, int is_two_way )
 	void * p_data[ 2 ];
 
 	i_len = CACULATE_INTERFACE_ENTITY_LEN( 0, 0 );
-	p_pipe = ( moon_pipe )calloc( sizeof( moon_pipe_s ) 
-		+ ( sizeof( pipe_point_data_s ) + i_len ) * 2 + len1 + len2, 1 );
-	if( p_pipe == NULL ){
-		MOON_PRINT_MAN( ERROR, "malloc error!" );
-		return -1;
-	}
+	p_pipe = p_buf;
 	p_pipe->ref_num = 1;
 	if( is_two_way == 0 ){
 		p_pipe->status = PIPE_STATUS_READY;
 		p_pipe->mutex_status = PIPE_NO_MUTEX;
 	}else if( pthread_mutex_init( &p_pipe->pipe_mutex, NULL ) != 0 ){
 		MOON_PRINT_MAN( ERROR, "pipe mutex init error!" );
-		free( p_pipe );
 		return -1;
 	}
-
 	p_pipe_data[ 0 ] = ( pipe_point_data )( p_pipe + 1 );
 	p_pipe_data[ 1 ] = ( pipe_point_data )( ( char * )( p_pipe_data[ 0 ] + 1 ) + i_len + len1 );
 	p_data[ 0 ] = ( char * )( p_pipe_data[ 0 ] + 1 ) + i_len;
@@ -169,6 +172,24 @@ int pipe_new( void ** ptr, int len1, int len2, int is_two_way )
 		pthread_mutex_lock( &p_pipe->pipe_mutex );
 	}
 	MOON_PRINT( TEST, pipe_xid, "%p:pipe_new:1", p_pipe );
+	return 0;
+}
+
+int pipe_new( void ** ptr, int len1, int len2, int is_two_way )
+{
+	int len;
+	moon_pipe p_pipe;
+
+	len = calculate_pipe_len( len1, len2 );
+	if( ( p_pipe = calloc( len, 1 ) ) == NULL ){
+		MOON_PRINT_MAN( ERROR, "malloc error!" );
+		return -1;
+	}
+	if( pipe_new2( ptr, len1, len2, is_two_way, p_pipe ) < 0 ){
+		free( p_pipe );
+		return -1;
+	}
+	p_pipe->status |= PIPE_ALLOC;
 	return 0;
 }
 
@@ -205,7 +226,9 @@ static int pipe_set_point_ref( void * p_data, void * p_ref )
 	p_pipe_data = ( pipe_point_data )GET_INTERFACE_START_POINT( p_data ) - 1;
 	p_pipe_data->p_cache_gc = FIND_INTERFACE( p_ref, gc_interface_s );
 	p_pipe_data->p_cache_listener = FIND_INTERFACE( p_ref, pipe_listener_interface_s );
-	p_pipe_data->free_pipe_data = p_pipe_data->p_cache_listener->free_pipe_data;
+	if( p_pipe_data->p_cache_listener != NULL ){
+		p_pipe_data->free_pipe_data = p_pipe_data->p_cache_listener->free_pipe_data;
+	}
 	CALL_INTERFACE_HANDLE_FUNC( p_pipe_data->p_cache_gc, ref_inc, p_ref );
 	p_pipe_data->p_ref = p_ref;
 	return 0;
@@ -294,7 +317,7 @@ static void pipe_ref_dec( void * p_data )
 {
 	pipe_point_data p_pipe_data0, p_pipe_data1;
 	moon_pipe p_pipe;
-	int ref_num;
+	int ref_num, need_free;
 
 	p_pipe_data0 = ( pipe_point_data )GET_INTERFACE_START_POINT( p_data ) - 1;
 	p_pipe = GET_PIPE( p_pipe_data0 );
@@ -308,9 +331,13 @@ static void pipe_ref_dec( void * p_data )
 		if( ( p_pipe->status & PIPE_CLOSED_MASK ) == 0 ){
 			MOON_PRINT_MAN( ERROR, "pipe not closed when free!" );
 		}
+		need_free = p_pipe->status & PIPE_ALLOC;
 		CALL_FUNC( p_pipe_data0->free_pipe_data, p_data );
 		CALL_FUNC( p_pipe_data1->free_pipe_data, GET_OTHER_POINT( p_pipe_data0, p_pipe ) );
-		free( p_pipe );
+		if( need_free ){
+			MOON_PRINT( TEST, NULL, "free buf" );
+			free( p_pipe );
+		}
 	}else if( ref_num < 0 ){
 		MOON_PRINT_MAN( ERROR, "ref num under overflow!" );
 	}

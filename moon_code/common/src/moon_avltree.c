@@ -2,23 +2,56 @@
 #include<stdlib.h>
 #include<stdio.h>
 
-
-int avl_traver_first( avl_tree avl, int ( *func )( addr_pair, void * ), void * para )
+static int addr_pair_cmp_func( void * p0, common_user_data_u user_data )
 {
-	addr_pair pair;
+	uint64_t u64_0, u64_1;
 
-	if( avl == NULL ){
+	u64_0 = ( ( addr_pair )p0 )->virtual_addr;
+	u64_1 = user_data.ull_num;
+	if( u64_0 > u64_1 ){
+		return 1;
+	}else if( u64_0 < u64_1 ){
+		return -1;
+	}else{
 		return 0;
 	}
-	if( avl_traver_first( avl->left, func, para ) < 0 ){
-		return -1;
+}
+
+int avl_traver_preorder( avl_tree avl, traver_func func, common_user_data_u user_data )
+{
+	int ret = 0;
+
+	if( avl == NULL
+		|| ( ret = func( avl + 1, user_data ) ) != 0
+		|| ( ret = avl_traver_preorder( avl->left, func, user_data ) ) != 0
+		|| ( ret = avl_traver_preorder( avl->right, func, user_data ) ) != 0 ){
+		return ret;
 	}
-	pair = ( addr_pair )( avl + 1 ); 
-	if( func( pair, para ) < 0 ){
-		return -1;
+	return 0;
+}
+
+int avl_traver_midorder( avl_tree avl, traver_func func, common_user_data_u user_data )
+{
+	int ret = 0;
+
+	if( avl == NULL
+		|| ( ret = avl_traver_midorder( avl->left, func, user_data ) ) != 0
+		|| ( ret = func( avl + 1, user_data ) ) != 0
+		|| ( ret = avl_traver_midorder( avl->right, func, user_data ) ) != 0 ){
+		return ret;
 	}
-	if( avl_traver_first( avl->right, func, para ) < 0 ){
-		return -1;
+	return 0;
+}
+
+int avl_traver_lastorder( avl_tree avl, traver_func func, common_user_data_u user_data )
+{
+	int ret = 0;
+
+	if( avl == NULL
+		|| ( ret = avl_traver_lastorder( avl->left, func, user_data ) ) != 0
+		|| ( ret = avl_traver_lastorder( avl->right, func, user_data ) ) != 0
+		|| ( ret = func( avl + 1, user_data ) ) != 0 ){
+		return ret;
 	}
 	return 0;
 }
@@ -48,36 +81,56 @@ void avl_free( avl_tree * pavl )
 	}
 }
 
-addr_pair avl_leftest_node( avl_tree avl )
+void * avl_leftest_node( avl_tree avl )
 {
-	if( avl == NULL ){
-		return NULL;
+	if( avl != NULL ){
+		for( ; avl->left != NULL; avl = avl->left ){
+			;
+		}
+		return avl + 1;
 	}
-	for( ; avl->left != NULL; avl = avl->left ){
-		;
+	return NULL;
+}
+
+void * avl_rightest_node( avl_tree avl )
+{
+	if( avl != NULL ){
+		for( ; avl->right != NULL; avl = avl->right ){
+			;
+		}
+		return avl + 1;
 	}
-	return ( addr_pair )( avl + 1 );
+	return NULL;
+}
+
+void * avl_search2( avl_tree avl, cmp_func cmp, common_user_data_u user_data )
+{
+	int ret;
+	void * prev, * cur;
+
+	prev = NULL;
+	while( avl != NULL ){
+		cur = avl + 1;
+		ret = cmp( cur, user_data );
+		if( ret > 0 ){
+			avl = avl->left;
+		}else if( ret < 0 ){
+			prev = cur;
+			avl = avl->right;
+		}else{
+			prev = cur;
+			break;
+		}
+	}
+	return prev;
 }
 
 addr_pair avl_search( avl_tree avl, unsigned long long addr )
 {
-	avl_tree tmp_avl;
-	addr_pair pair, last;
+	common_user_data_u user_data;
 
-	last = NULL;
-	tmp_avl = avl;
-	while( tmp_avl != NULL ){
-		pair = ( addr_pair )( tmp_avl + 1 );
-		if( pair->virtual_addr > addr ){
-			tmp_avl = tmp_avl->left;
-		}else if( pair->virtual_addr == addr ){
-			return pair;
-		}else{
-			last = pair;
-			tmp_avl = tmp_avl->right;
-		}
-	}
-	return last;
+	user_data.ull_num = addr;
+	return avl_search2( avl, addr_pair_cmp_func, user_data );
 }
 
 #define SET_LR( node, side, child_node) do{\
@@ -172,52 +225,42 @@ static inline avl_tree avl_balance( avl_tree parent_avl, avl_tree * pavl )
 			axis_avl->balance = 0;
 		}
 	}
-
 	return axis_avl;
 }
 
-addr_pair avl_add( avl_tree * pavl, unsigned long long addr )
+void * avl_add2( avl_tree * pavl, void * p_data, cmp_func cmp, common_user_data_u user_data )
 {
 	avl_tree new_node, * tmp_pavl, parent_avl, tmp_avl;
-	addr_pair pair;
-	int balance;
+	void * p_cmp_data;
+	int balance, ret;
 
-	if( pavl == NULL ){
+	if( pavl == NULL || p_data == NULL ){
 		MOON_PRINT_MAN( ERROR, "input paraments error!" );
 		return NULL;
 	}
-	new_node = calloc( 1, sizeof( avl_tree_s ) + sizeof( addr_pair_s ) );
-	if( new_node == NULL ){
-		MOON_PRINT_MAN( ERROR, "malloc error!" );
-		return NULL;
-	}
-	pair = ( addr_pair )( new_node + 1 );
-	pair->virtual_addr = addr;
-
+	new_node = ( avl_tree )p_data - 1;
 	tmp_pavl = pavl;
 	parent_avl = NULL;
 	while( *tmp_pavl != NULL ){
 		parent_avl = *tmp_pavl;
-		pair = ( addr_pair )( *tmp_pavl + 1 );
-		if( pair->virtual_addr > addr ){
+		p_cmp_data = *tmp_pavl + 1;
+		ret = cmp( p_cmp_data, user_data );
+		if( ret > 0 ){
 			tmp_pavl = &( *tmp_pavl )->left;
-		}else if( pair->virtual_addr == addr ){
-			free( new_node );
-			return pair;
-		}else{
+		}else if( ret < 0  ){
 			tmp_pavl = &( *tmp_pavl )->right;
+		}else{
+			return p_cmp_data;
 		}
 	}
-
 	*tmp_pavl = new_node;
 	new_node->parent = parent_avl;
 	tmp_avl = new_node;
 	while( tmp_avl-> parent != NULL ){
 		parent_avl = tmp_avl->parent;
+		balance = 1;
 		if( parent_avl->left == tmp_avl ){
 			balance = -1;
-		}else{
-			balance = 1;
 		}
 		parent_avl->balance += balance;
 		switch( parent_avl->balance ){
@@ -234,38 +277,56 @@ addr_pair avl_add( avl_tree * pavl, unsigned long long addr )
 		default:
 			MOON_PRINT_MAN( ERROR, "dont balance" );
 		}
-		return ( addr_pair )( new_node + 1 );
+		break;
 	}
-	return ( addr_pair )( new_node + 1 );
+	return p_data;
 }
 
-addr_pair_s avl_del( avl_tree * pavl, unsigned long long addr )
+addr_pair avl_add( avl_tree * pavl, unsigned long long addr )
 {
-	addr_pair pair, pair2;
+	avl_tree new_node;
+	addr_pair pair;
+	void * p_data;
+	common_user_data_u user_data;
+
+	if( pavl == NULL ){
+		MOON_PRINT_MAN( ERROR, "input paraments error!" );
+		return NULL;
+	}
+	new_node = calloc( 1, sizeof( avl_tree_s ) + sizeof( addr_pair_s ) );
+	if( new_node == NULL ){
+		MOON_PRINT_MAN( ERROR, "malloc error!" );
+		return NULL;
+	}
+	pair = ( addr_pair )( new_node + 1 );
+	pair->virtual_addr = addr;
+	user_data.ull_num = addr;
+	p_data = avl_add2( pavl, pair, addr_pair_cmp_func, user_data );
+	if( p_data != pair ){
+		free( new_node );
+	}
+	return pair;
+}
+
+static inline void replace_avl( avl_tree new, avl_tree replaced, avl_tree * pavl )
+{
+	new->balance = replaced->balance;
+	SET_LR( new, left, replaced->left );
+	SET_LR( new, right, replaced->right );
+	SET_PARENT( new, replaced, pavl );
+}
+
+void * avl_del2( avl_tree * pavl, void * p_data )
+{
 	int balance;
 	avl_tree tmp_avl, del_avl, parent_avl, child_avl;
-	addr_pair_s del_pair;
+	avl_tree mark_avl1, mark_avl2;
 
-	memset( &del_pair, 0, sizeof( del_pair ) );
-	if( pavl == NULL ){
-		return del_pair;
+	if( pavl == NULL || p_data == NULL ){
+		return NULL;
 	}
-	tmp_avl = *pavl;
-	while( tmp_avl != NULL ){
-		pair = ( addr_pair )( tmp_avl + 1 );
-		if( pair->virtual_addr > addr ){
-			tmp_avl = tmp_avl->left;
-		}else if( pair->virtual_addr == addr ){
-			del_pair = *pair;
-			break;
-		}else{
-			tmp_avl = tmp_avl->right;
-		}
-	}
-	if( tmp_avl == NULL ){
-		return del_pair;
-	}
-
+	mark_avl1 = mark_avl2 = NULL;
+	tmp_avl = ( avl_tree )p_data - 1;
 	del_avl = tmp_avl;
 	if( tmp_avl->left == NULL && tmp_avl->right == NULL ){//为叶子节点
 		goto start_back;//以此节点开始上溯
@@ -283,16 +344,12 @@ addr_pair_s avl_del( avl_tree * pavl, unsigned long long addr )
 		}
 		child_avl = tmp_avl->right;
 	}
-	pair =( addr_pair )( tmp_avl + 1 );
-	pair2 = ( addr_pair )( del_avl + 1 );
-	*pair2 = *pair;
+	mark_avl1 = del_avl;
 	del_avl = tmp_avl;
 	if( child_avl != NULL ){
-		pair2 = ( addr_pair )( child_avl + 1 );
-		*pair = *pair2;
+		mark_avl2 = del_avl;
 		del_avl = child_avl;
 	}
-
 start_back:
 	tmp_avl = del_avl;
 	while( tmp_avl->parent != NULL ){
@@ -327,69 +384,51 @@ end:
 		}else{
 			parent_avl->right = NULL;
 		}
+		if( mark_avl2 != NULL ){
+			replace_avl( del_avl, mark_avl2, pavl );
+			del_avl = mark_avl2;
+		}
+		if( mark_avl1 != NULL ){
+			replace_avl( del_avl, mark_avl1, pavl );
+			del_avl = mark_avl1;
+		}
 	}else{
 		*pavl = NULL;
 	}
-	free( del_avl );
+	del_avl->balance = 0;
+	del_avl->left = del_avl->right = del_avl->parent = NULL;
+	return del_avl + 1;
+}
 
+addr_pair_s avl_del( avl_tree * pavl, unsigned long long addr )
+{
+	addr_pair_s del_pair;
+	addr_pair p_pair;
+
+	memset( &del_pair, 0, sizeof( del_pair ) );
+	if( pavl == NULL ){
+		return del_pair;
+	}
+	p_pair = avl_search( *pavl, addr );
+	if( p_pair != NULL 
+		&& p_pair->virtual_addr == addr ){
+		del_pair = *p_pair;
+		avl_del2( pavl, p_pair );
+		free( ( avl_tree )p_pair - 1 );
+	}
 	return del_pair;
 }
 
-#ifdef LEVEL_TEST
-
-void avl_test()
+void avl_replace2( avl_tree * pavl, void * p_new, void * p_replaced )
 {
-	avl_tree avl_head = NULL;
-	char cmd;
-	int num, i, data;
-	addr_pair ret;
-
-	printf("r:restart\na:add\nd:delete\ns:search\nq:quit\n");
-	while( 1 ){
-		scanf( "%c", &cmd );
-		switch( cmd ){
-		case 'r':
-			avl_free( &avl_head );
-			break;
-		case 'a':
-			num = 0;
-			scanf( "%d", &num );
-			for( i = 0; i < num; i++ ){
-				data = 0;
-				scanf( "%d", &data );
-				avl_add( &avl_head, data );
-				avl_print( avl_head );
-			}
-			break;
-		case 'd':
-			data = 0;
-			scanf( "%d", &data );
-			avl_del( &avl_head, data );
-			avl_print( avl_head );
-			break;
-		case 's':
-			data = 0;
-			scanf( "%d", &data );
-			ret = avl_search( avl_head, data );
-
-			if( ret != NULL ){
-				printf( "search ok:%lld\n", ret->virtual_addr );
-			}else{
-				printf( "cant find\n" );
-			}
-			break;
-		case 'q':
-			avl_free( &avl_head );
-			return;
-		case ' ':
-		case '\t':
-		case '\n':
-			break;
-		default:
-			printf( "cmd error:%c!\n", cmd );
-		}
+	avl_tree new, replaced;
+	
+	if( pavl != NULL && p_new != NULL && p_replaced != NULL ){
+		new = ( avl_tree )p_new - 1;
+		replaced = ( avl_tree )p_replaced - 1;
+		replace_avl( new, replaced, pavl );
+		replaced->balance = 0;
+		replaced->left = replaced->right = replaced->parent = NULL;
 	}
 }
-
-#endif
 

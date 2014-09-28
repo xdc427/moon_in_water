@@ -11,6 +11,17 @@
 { "usleep":100000 },
 { "parse":"google.com", "flags":2 },
 { "usleep":25000 },
-{ "parse":"google.com", "flags":1 }
+{ "parse":"google.com", "flags":1 },
+
+{ "usleep":1000000 },
+{ "parse":"baidu.com" },
+{ "cancel":7 },
+{ "parse":"baidu.com" },
+{ "usleep":1000000 },
+{ "cancel":8 },
+{ "parse":"baidu.com" },
+{ "usleep":1000 },
+{ "cancel":9 }
+
 ]
 
